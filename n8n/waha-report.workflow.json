@@ -1,0 +1,223 @@
+{
+  "id": "wahaReport001",
+  "versionId": "d4e5f6a7-1b2c-4d3e-8f90-a1b2c3d4e5f6",
+  "name": "WAHA - Report Omnichannel (/report)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "nodes": [
+    {
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Catatan",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        -220
+      ],
+      "parameters": {
+        "content": "## Report WhatsApp (/report) via WAHA\n1. Buka node **Parse perintah** dan isi CONFIG (GAS_URL, N8N_KEY, WAHA_URL, nomor yang diizinkan).\n2. Aktifkan workflow, lalu salin **Production URL** node Webhook.\n3. Di WAHA, set webhook session ke URL itu dengan event `message`.\n4. Kirim `/report`, `/report oktober`, atau `/report shopee mitra` dari nomor yang diizinkan.\nNomor di luar daftar diabaikan tanpa balasan.",
+        "height": 200,
+        "width": 560
+      }
+    },
+    {
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Webhook WAHA",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "b2f6c7a4-5d1e-4c53-9a3b-6f2d8e1c4a90",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "waha-report",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Parse perintah",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// ============ KONFIGURASI: ubah bagian ini saja ============\nconst CONFIG = {\n  GAS_URL: 'https://script.google.com/macros/s/ISI_URL_WEB_APP/exec', // URL Web App Apps Script (berakhiran /exec)\n  N8N_KEY: 'ISI_DENGAN_N8N_KEY',                                      // sama dengan Script Property N8N_KEY\n  WAHA_URL: 'http://localhost:3000',                                  // alamat WAHA dari sisi n8n\n  WAHA_API_KEY: '',                                                   // kosongkan jika WAHA tanpa API key\n  WAHA_SESSION: 'default',\n  ALLOWED: ['628xxxxxxxxxx'],                                         // nomor yang boleh memakai /report (internasional, tanpa +)\n  ALLOW_FROM_ME: true,                                                // true = pesan yang Anda ketik sendiri dari nomor yang tersambung ke WAHA juga diterima\n};\n// ===========================================================\n\nconst MONTHS = { jan: 1, januari: 1, feb: 2, februari: 2, mar: 3, maret: 3, apr: 4, april: 4, mei: 5, jun: 6, juni: 6, jul: 7, juli: 7, agu: 8, agt: 8, agus: 8, agustus: 8, sep: 9, sept: 9, september: 9, okt: 10, oktober: 10, nov: 11, november: 11, des: 12, desember: 12 };\nconst PLATFORMS = { shopee: 'SHOPEE', tiktok: 'TIKTOK', tt: 'TIKTOK', tokped: 'TOKPED', tokopedia: 'TOKPED', wa: 'WA', whatsapp: 'WA' };\nconst STORES = { ds: 'DIANSARI', diansari: 'DIANSARI', mitra: 'MITRA' };\nconst HELP = [\n  '*Cara pakai /report*',\n  '• */report* → bulan ini, semua platform',\n  '• */report oktober* → bulan tertentu (tahun ini)',\n  '• */report oktober 2025* atau */report 2025-10*',\n  '• */report bulan lalu*',\n  '• */report semua* → semua bulan',\n  '• */report shopee mitra* → filter platform + toko',\n  '• */report oktober tiktok ds*',\n  '',\n  'Platform: shopee, tiktok, tokped, wa',\n  'Toko: ds (Diansari), mitra',\n].join('\\n');\n\nconst input = $input.first().json;\nconst body = input.body || input;\nconst msg = body.payload || {};\n\n// Hanya proses pesan masuk berawalan /report\nif (body.event && body.event !== 'message') return [];\nconst text = String(msg.body || '').trim();\nif (!/^\\/report(\\s|$)/i.test(text)) return [];\n\n// Otorisasi: hanya nomor di ALLOWED (atau pesan dari nomor sendiri bila ALLOW_FROM_ME)\nconst fromMe = msg.fromMe === true;\nif (fromMe && !CONFIG.ALLOW_FROM_ME) return [];\nconst chatId = fromMe ? (msg.to || msg.from) : msg.from;\nif (!chatId) return [];\nconst senderRaw = String(msg.participant || msg.author || (msg._data && msg._data.author) || msg.from || '');\nconst senderNum = senderRaw.replace(/@.*$/, '').replace(/\\D/g, '');\nconst allowed = fromMe || CONFIG.ALLOWED.some(a => {\n  const digits = String(a).replace(/\\D/g, '');\n  return (digits !== '' && digits === senderNum) || String(a) === senderRaw;\n});\nif (!allowed) return [];   // diam: tidak membalas nomor yang tidak diizinkan\n\nconst base = { chatId, wahaUrl: String(CONFIG.WAHA_URL).replace(/\\/+$/, ''), wahaKey: CONFIG.WAHA_API_KEY, session: CONFIG.WAHA_SESSION };\nconst reply = (t) => [{ json: { ok: false, replyText: t, ...base } }];\n\n// ---- Baca argumen\nconst toks = text.replace(/^\\/report/i, '').toLowerCase().replace(/,/g, ' ').split(/\\s+/).filter(Boolean);\nif (['help', 'bantuan', 'menu', '?'].includes(toks[0])) return reply(HELP);\n\nconst nowWib = new Date(Date.now() + 7 * 3600 * 1000);\nconst curY = nowWib.getUTCFullYear(), curM = nowWib.getUTCMonth() + 1;\nconst pad = (n) => String(n).padStart(2, '0');\n\nlet month = null, year = null, allMonths = false, prevMonth = false, platform = null, store = null;\nconst unknown = [];\nfor (let i = 0; i < toks.length; i++) {\n  const t = toks[i]; let m;\n  if ((m = t.match(/^(\\d{4})-(\\d{1,2})$/))) { year = +m[1]; month = +m[2]; }\n  else if ((m = t.match(/^(\\d{1,2})[\\/-](\\d{4})$/))) { month = +m[1]; year = +m[2]; }\n  else if (/^\\d{4}$/.test(t)) { year = +t; }\n  else if (t === 'bulan' && toks[i + 1] === 'ini') { i++; }\n  else if (t === 'bulan' && toks[i + 1] === 'lalu') { i++; prevMonth = true; }\n  else if (MONTHS[t]) { month = MONTHS[t]; }\n  else if (['semua', 'all', 'total'].includes(t)) { allMonths = true; }\n  else if (PLATFORMS[t]) { platform = PLATFORMS[t]; }\n  else if (STORES[t]) { store = STORES[t]; }\n  else unknown.push(t);\n}\nif (unknown.length) return reply('Perintah tidak dikenali: \"' + unknown.join(' ') + '\".\\n\\n' + HELP);\n\n// ---- Bulan\nlet ym;\nif (allMonths) ym = 'ALL';\nelse if (prevMonth) { let y = curY, m = curM - 1; if (m === 0) { m = 12; y--; } ym = y + '-' + pad(m); }\nelse if (month !== null) {\n  if (month < 1 || month > 12) return reply('Bulan tidak valid.\\n\\n' + HELP);\n  const y = year !== null ? year : (month > curM ? curY - 1 : curY);   // bulan yang belum terjadi dianggap tahun lalu\n  ym = y + '-' + pad(month);\n}\nelse if (year !== null) return reply('Tulis bulannya juga, mis. */report oktober ' + year + '*.');\nelse ym = curY + '-' + pad(curM);\n\n// ---- Filter platform / toko (sama dengan filter di dashboard)\nlet storeKey = 'ALL';\nif (platform || store) {\n  if (platform === 'WA') storeKey = 'WA_ALL';\n  else if (!platform) return reply('Sebutkan platformnya juga, mis. */report shopee ' + (store === 'MITRA' ? 'mitra' : 'ds') + '*.\\n\\n' + HELP);\n  else if (!store) return reply('Sebutkan tokonya (ds atau mitra), mis. */report ' + platform.toLowerCase() + ' mitra*.');\n  else storeKey = platform + '_' + store;\n}\n\nreturn [{ json: { ok: true, gasUrl: CONFIG.GAS_URL, gasBody: JSON.stringify({ action: 'report', apiKey: CONFIG.N8N_KEY, payload: { month: ym, store: storeKey } }), ...base } }];\n"
+      }
+    },
+    {
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Perintah valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c3000000-0000-4000-8000-000000000001",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Ambil report (Apps Script)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        -100
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.gasUrl }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain",
+        "body": "={{ $json.gasBody }}",
+        "options": {
+          "timeout": 90000
+        }
+      }
+    },
+    {
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Format balasan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Menyusun balasan dari respons Apps Script. Jika gagal, balasan berisi penyebabnya (bukan diam).\nconst ctx = $('Parse perintah').first().json;\nconst r = $input.first().json || {};\n\nlet parsed = null;\nconst raw = r.data !== undefined ? r.data : r;\ntry { parsed = (typeof raw === 'string') ? JSON.parse(raw) : raw; } catch (e) { parsed = null; }\n\nlet text;\nif (parsed && parsed.success && parsed.text) {\n  text = parsed.text;\n} else if (parsed && parsed.message) {\n  text = '⚠️ Gagal mengambil report: ' + parsed.message;\n} else if (r.error) {\n  text = '⚠️ Gagal menghubungi Apps Script: ' + String((r.error && (r.error.message || r.error.description)) || r.error).slice(0, 300);\n} else {\n  text = '⚠️ Gagal mengambil report: respons server tidak valid. Pastikan Web App di-deploy dengan akses \"Anyone\" dan GAS_URL benar.';\n}\n\nreturn [{ json: { chatId: ctx.chatId, wahaUrl: ctx.wahaUrl, wahaKey: ctx.wahaKey, session: ctx.session, replyText: text } }];\n"
+      }
+    },
+    {
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Kirim balasan (WAHA)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.wahaUrl }}/api/sendText",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $json.wahaKey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chatId: $json.chatId, text: $json.replyText, session: $json.session }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook WAHA": {
+      "main": [
+        [
+          {
+            "node": "Parse perintah",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse perintah": {
+      "main": [
+        [
+          {
+            "node": "Perintah valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perintah valid?": {
+      "main": [
+        [
+          {
+            "node": "Ambil report (Apps Script)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Kirim balasan (WAHA)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil report (Apps Script)": {
+      "main": [
+        [
+          {
+            "node": "Format balasan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format balasan": {
+      "main": [
+        [
+          {
+            "node": "Kirim balasan (WAHA)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

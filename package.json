@@ -1,0 +1,14 @@
+{
+  "name": "omnichannel-deck-gas-bridge",
+  "version": "14.19.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/gas.test.mjs && node test/n8n.test.mjs",
+    "build:css": "tailwindcss -c tailwind.config.cjs -i src/input.css -o public/tailwind.css --minify",
+    "build:n8n": "node n8n/build-workflow.mjs"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  }
+}

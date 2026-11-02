@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Omnichannel Performance Deck</title>
+  
+  <script src="config.js"></script>
+  <link rel="stylesheet" href="tailwind.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #f9fafb; color: #1f2937; }
+    .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); }
+    #loader { display: none; position: fixed; inset: 0; background: rgba(255,255,255,0.9); z-index: 50; justify-content: center; align-items: center; flex-direction: column;}
+    .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #f97316; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    select, input, button { outline: none; }
+    th.sortable { cursor: pointer; user-select: none; transition: background-color 0.2s; }
+    th.sortable:hover { background-color: #f3f4f6; }
+    .progress-container { width: 300px; background-color: #e5e7eb; border-radius: 9999px; overflow: hidden; margin-top: 15px; display: none; }
+    .progress-bar { height: 8px; background-color: #f97316; width: 0%; transition: width 0.3s ease; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <div id="loginOverlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-70 z-[60] justify-center items-center p-4">
+    <form onsubmit="submitLogin(event)" class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm space-y-4">
+      <div class="flex items-center gap-2">
+        <div class="bg-gradient-to-r from-orange-500 to-green-500 text-white p-2 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        </div>
+        <h2 class="text-lg font-bold text-gray-800">Omnichannel Deck</h2>
+      </div>
+      <p class="text-xs text-gray-500">Masukkan password untuk membuka dashboard.</p>
+      <input type="password" id="loginPw" autocomplete="current-password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500">
+      <p id="loginError" class="text-xs text-red-500 min-h-[1rem]"></p>
+      <button type="submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg transition">Masuk</button>
+    </form>
+  </div>
+
+  <div id="loader">
+    <div class="spinner mb-4"></div>
+    <h3 class="text-gray-800 font-bold text-lg" id="loaderTitle">Memproses Data</h3>
+    <p class="text-gray-500 font-medium text-sm mt-1 text-center px-4" id="loaderText">Mohon tunggu sebentar...</p>
+    <div class="progress-container" id="progressContainer"><div class="progress-bar" id="progressBar"></div></div>
+  </div>
+
+  <div id="toast" class="fixed bottom-5 right-5 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 translate-y-20 opacity-0 z-50 max-w-md w-full md:w-auto">
+    Notifikasi
+  </div>
+
+  <nav class="bg-white border-b px-6 py-4 flex flex-col lg:flex-row justify-between items-center sticky top-0 z-40 gap-4">
+    <div class="flex items-center gap-2 w-full lg:w-auto">
+      <div class="bg-gradient-to-r from-orange-500 to-green-500 text-white p-2 rounded-lg">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+      </div>
+      <h1 class="text-xl font-bold">Omnichannel Deck <span class="text-xs font-normal text-gray-400 ml-1">v14.19</span></h1>
+      <button id="btnRefresh" type="button" onclick="manualRefresh()" title="Data dicek otomatis tiap 1 menit. Klik untuk muat ulang sekarang." class="ml-2 text-[11px] text-gray-400 hover:text-orange-600 transition flex items-center gap-1"><span id="refreshIcon" class="inline-block">&#10227;</span><span id="lastUpdatedText">Memuat...</span></button>
+    </div>
+    
+    <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-end">
+      
+      <select id="mainFilter" onchange="applyFilter()" class="bg-gray-800 border border-gray-700 text-white py-2 px-3 rounded-lg hover:bg-gray-700 transition text-sm font-semibold shadow-sm">
+        <option value="ALL">🌐 Semua Platform (Gabungan)</option>
+        <option value="SHOPEE_DIANSARI">🟠 Shopee - Diansari Plastik</option>
+        <option value="SHOPEE_MITRA">🟠 Shopee - Mitra Diansari</option>
+        <option value="TIKTOK_DIANSARI">⚫ TikTok Shop - Diansari</option>
+        <option value="TIKTOK_MITRA">⚫ TikTok Shop - Mitra</option>
+        <option value="TOKPED_DIANSARI">🟢 Tokopedia - Diansari</option>
+        <option value="TOKPED_MITRA">🟢 Tokopedia - Mitra</option>
+        <option value="WA_ALL">💬 WhatsApp (Direct)</option>
+      </select>
+
+      <select id="monthFilter" onchange="applyFilter()" class="hidden bg-white border border-gray-300 text-gray-700 py-2 px-3 rounded-lg hover:bg-gray-50 transition text-sm font-semibold shadow-sm">
+        <option value="ALL">Semua Bulan</option>
+      </select>
+
+      <div class="flex items-center bg-orange-50 border border-orange-200 rounded-lg shadow-sm">
+        <select id="uploadTypeSelect" class="bg-transparent text-orange-700 py-2 px-3 hover:bg-orange-100 transition text-sm font-bold border-r border-orange-200 rounded-l-lg cursor-pointer">
+          <option value="pesanan">Pesanan (Shopee)</option>
+          <option value="penghasilan">Penghasilan (Shopee)</option>
+          <option value="iklan">Iklan (Shopee)</option>
+          <option value="tiktok">Rekap Harian TikTok Shop</option>
+          <option value="tokopedia">Rekap Harian Tokopedia</option>
+        </select>
+        <select id="uploadStoreSelect" class="bg-transparent text-orange-700 py-2 px-3 hover:bg-orange-100 transition text-sm font-bold border-r border-orange-200 cursor-pointer">
+          <option value="Diansari Plastik">Diansari Plastik</option>
+          <option value="Mitra Diansari">Mitra Diansari</option>
+        </select>
+        <label class="cursor-pointer text-orange-600 px-4 py-2 hover:bg-orange-100 transition text-sm font-bold flex items-center gap-2 rounded-r-lg">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>Upload File<input type="file" id="fileInput" accept=".xlsx, .csv" class="hidden" onchange="handleFileUpload(event)">
+        </label>
+      </div>
+    </div>
+  </nav>
+
+  <main class="p-6 max-w-7xl mx-auto">
+    <!-- NAVIGATION TABS -->
+    <div class="flex flex-wrap gap-6 border-b border-gray-200 mb-6">
+      <button id="btnTabDashboard" onclick="switchTab('dashboard')" class="pb-3 border-b-2 border-orange-500 font-bold text-orange-600 transition">📈 Dashboard</button>
+      <button id="btnTabTable" onclick="switchTab('table')" class="pb-3 border-b-2 border-transparent font-semibold text-gray-500 hover:text-orange-500 transition">📄 Data Tabel</button>
+      <button id="btnTabProduct" onclick="switchTab('product')" class="pb-3 border-b-2 border-transparent font-semibold text-gray-500 hover:text-orange-500 transition">📦 Performa SKU</button>
+      <button id="btnTabIklan" onclick="switchTab('iklan')" class="pb-3 border-b-2 border-transparent font-semibold text-gray-500 hover:text-pink-500 transition">📢 Iklan vs Aktual</button>
+      <button id="btnTabRekon" onclick="switchTab('rekon')" class="pb-3 border-b-2 border-transparent font-semibold text-gray-500 hover:text-orange-500 transition flex items-center gap-1">🕵️ Rekon <span class="bg-red-500 text-white text-[9px] px-1.5 rounded-full ml-1" id="badge-rekon-alert" style="display:none;">!</span></button>
+      <button id="btnTabWa" onclick="switchTab('wa')" class="pb-3 border-b-2 border-transparent font-semibold text-gray-500 hover:text-green-500 transition flex items-center gap-1">📝 Input WA</button>
+    </div>
+
+    <!-- VIEW DASHBOARD -->
+    <div id="viewDashboard" class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-blue-500 flex flex-col justify-between">
+          <div><p class="text-[11px] text-gray-500 font-bold mb-1">✅ Pesanan Sukses</p><h3 class="text-xl font-black text-gray-800" id="kpi-orders">0 Inv</h3></div>
+          <p class="text-[11px] text-blue-500 mt-2 font-semibold border-t pt-2" id="kpi-sold">0 Item Terjual</p>
+        </div>
+        <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-teal-500 flex flex-col justify-between">
+          <div><p class="text-[11px] text-gray-500 font-bold mb-1">📊 Omset Kotor (Gross)</p><h3 class="text-xl font-black text-teal-600" id="kpi-gross-revenue">Rp 0</h3></div>
+          <div class="mt-2 text-[10px] text-gray-500 border-t pt-2">Sebelum potongan platform</div>
+        </div>
+        <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-green-500 flex flex-col justify-between">
+          <div><p class="text-[11px] text-gray-500 font-bold mb-1">💸 Cair Bersih (Net)</p><h3 class="text-xl font-black text-green-600" id="kpi-net-revenue">Rp 0</h3></div>
+          <div class="mt-2 text-[10px] text-gray-500 border-t pt-2 flex justify-between"><span>Potongan Est:</span><span class="font-bold text-red-500" id="kpi-potongan">0%</span></div>
+        </div>
+        <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-indigo-500 flex flex-col justify-between">
+          <div><p class="text-[11px] text-gray-500 font-bold mb-1">💎 Laba (Profit)</p><h3 class="text-xl font-black text-indigo-600" id="kpi-profit">Rp 0</h3></div>
+          <div class="mt-2 text-[10px] flex justify-between items-center border-t pt-2"><span class="text-gray-500">HPP: <span class="font-bold text-gray-700" id="kpi-hpp">Rp 0</span></span><span class="font-bold text-indigo-500 bg-indigo-50 px-1 rounded" id="kpi-margin">0%</span></div>
+        </div>
+        
+        <div class="bg-white p-4 rounded-xl card-shadow border-l-4 border-red-500 flex flex-col justify-between">
+          <p class="text-[11px] text-gray-500 font-bold mb-2">⚠️ Insiden (Batal & Retur)</p>
+          <div class="flex justify-between items-start mt-1 gap-2 border-t pt-2">
+            <div class="w-1/2">
+                <p class="text-[9px] text-gray-400">Dibatalkan</p>
+                <h4 class="text-base font-black text-red-500 leading-tight" id="kpi-batal">0 Inv</h4>
+                <p class="text-[10px] font-bold text-red-400 mt-1" id="kpi-batal-nom">Rp 0</p>
+            </div>
+            <div class="w-1/2 text-right border-l pl-2">
+                <p class="text-[9px] text-gray-400">Diretur</p>
+                <h4 class="text-base font-black text-orange-500 leading-tight" id="kpi-retur">-</h4>
+                <p class="text-[10px] font-bold text-orange-400 mt-1" id="kpi-retur-nom">Rp 0</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white p-5 rounded-xl card-shadow border border-gray-100 col-span-1 md:col-span-2">
+          <h3 id="trendChartTitle" class="font-bold text-gray-800 mb-4">Tren Pemesanan (Gross Revenue Rp)</h3>
+          <div class="relative h-72 w-full"><canvas id="trendChart"></canvas></div>
+        </div>
+        <div class="bg-white p-5 rounded-xl card-shadow border border-gray-100">
+          <h3 class="font-bold text-gray-800 mb-4">Top 5 Produk Induk (Sukses)</h3>
+          <div class="relative h-72 w-full"><canvas id="skuChart"></canvas></div>
+        </div>
+        <div class="bg-white p-5 rounded-xl card-shadow border border-gray-100">
+          <h3 class="font-bold text-gray-800 mb-4">Distribusi Penjualan (Metode/Platform)</h3>
+          <div class="relative h-72 w-full"><canvas id="paymentChart"></canvas></div>
+        </div>
+        <div class="bg-white p-5 rounded-xl card-shadow border border-gray-100">
+          <h3 class="font-bold text-gray-800 mb-4">Top 5 Provinsi / Sumber</h3>
+          <div class="relative h-72 w-full"><canvas id="provinceChart"></canvas></div>
+        </div>
+        <div class="bg-white p-5 rounded-xl card-shadow border border-gray-100">
+          <h3 class="font-bold text-gray-800 mb-4">Alasan Insiden (Batal/Retur)</h3>
+          <div class="relative h-72 w-full"><canvas id="cancelChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW TAB IKLAN -->
+    <div id="viewIklan" class="hidden space-y-6">
+      <div class="bg-white p-6 rounded-xl card-shadow border border-gray-100">
+        <div class="flex flex-col md:flex-row justify-between mb-6 border-b pb-4 border-gray-100">
+            <div>
+                <h3 class="text-xl font-bold text-gray-800">📢 Perbandingan Performa Iklan vs Aktual</h3>
+                <p class="text-xs text-gray-500 mt-1">Mengukur efektivitas biaya iklan CSV terhadap seluruh pendapatan pesanan (Gross) yang sukses.</p>
+            </div>
+            <div class="text-right mt-2 md:mt-0">
+                <span class="text-xs font-semibold bg-pink-100 text-pink-700 px-3 py-1 rounded-full" id="iklan-status-bulan">Memuat...</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 relative overflow-hidden">
+                <div class="absolute right-0 top-0 w-2 h-full bg-pink-500"></div>
+                <p class="text-xs font-bold text-gray-500">Total Biaya Iklan (Expense)</p>
+                <h3 class="text-2xl font-black text-gray-800 mt-1" id="iklan-biaya">Rp 0</h3>
+                <p class="text-[10px] text-gray-400 mt-1">Sesuai Filter Data Raw CSV</p>
+            </div>
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 relative overflow-hidden">
+                <div class="absolute right-0 top-0 w-2 h-full bg-orange-400"></div>
+                <p class="text-xs font-bold text-gray-500">Shopee GMV Klaim (Iklan)</p>
+                <h3 class="text-2xl font-black text-gray-800 mt-1" id="iklan-omzet-klaim">Rp 0</h3>
+                <p class="text-[10px] text-gray-400 mt-1">Omzet yang teratribusi ke Iklan</p>
+            </div>
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 relative overflow-hidden">
+                <div class="absolute right-0 top-0 w-2 h-full bg-teal-500"></div>
+                <p class="text-xs font-bold text-gray-500">Omzet Aktual Keseluruhan</p>
+                <h3 class="text-2xl font-black text-teal-600 mt-1" id="iklan-omzet-aktual">Rp 0</h3>
+                <p class="text-[10px] text-gray-400 mt-1">Total Gross Pesanan Sukses</p>
+            </div>
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 relative overflow-hidden">
+                <div class="absolute right-0 top-0 w-2 h-full bg-blue-500"></div>
+                <p class="text-xs font-bold text-gray-500">Total Terjual (Iklan vs Aktual)</p>
+                <h3 class="text-2xl font-black text-gray-800 mt-1"><span id="iklan-qty-klaim">0</span> <span class="text-sm font-normal text-gray-400">/</span> <span class="text-blue-600" id="iklan-qty-aktual">0</span></h3>
+                <p class="text-[10px] text-gray-400 mt-1">Pcs Klaim Iklan / Pcs Keseluruhan</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+            <div class="bg-pink-50 rounded-lg p-5 border border-pink-100 text-center shadow-sm">
+                <h4 class="text-sm font-bold text-pink-800 mb-2">ACOS (Advertising Cost of Sales)</h4>
+                <div class="flex justify-around items-center">
+                    <div>
+                        <p class="text-[10px] text-pink-600 uppercase font-semibold">Versi Klaim Iklan Shopee</p>
+                        <h2 class="text-3xl font-black text-pink-700" id="iklan-acos-klaim">0%</h2>
+                    </div>
+                    <div class="w-px h-12 bg-pink-200"></div>
+                    <div>
+                        <p class="text-[10px] text-teal-700 uppercase font-semibold">Aktual (Biaya : Omzet Keseluruhan)</p>
+                        <h2 class="text-3xl font-black text-teal-600" id="iklan-acos-aktual">0%</h2>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-indigo-50 rounded-lg p-5 border border-indigo-100 text-center shadow-sm">
+                <h4 class="text-sm font-bold text-indigo-800 mb-2">ROAS (Return on Ad Spend)</h4>
+                <div class="flex justify-around items-center">
+                    <div>
+                        <p class="text-[10px] text-indigo-600 uppercase font-semibold">Versi Klaim Iklan Shopee</p>
+                        <h2 class="text-3xl font-black text-indigo-700" id="iklan-roas-klaim">0x</h2>
+                    </div>
+                    <div class="w-px h-12 bg-indigo-200"></div>
+                    <div>
+                        <p class="text-[10px] text-teal-700 uppercase font-semibold">Aktual (Omzet Keseluruhan : Biaya)</p>
+                        <h2 class="text-3xl font-black text-teal-600" id="iklan-roas-aktual">0x</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <p class="text-xs text-center text-gray-400 mt-6"><span class="font-bold text-pink-500">Catatan ACOS Aktual:</span> Semakin kecil persentasenya, berarti biaya iklan Anda semakin efisien terhadap pendapatan total toko.</p>
+      </div>
+    </div>
+
+    <!-- VIEW TABEL UTAMA -->
+    <div id="viewTable" class="hidden bg-white rounded-xl card-shadow border border-gray-100 overflow-hidden">
+      <div class="p-5 border-b border-gray-100 bg-gray-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h3 class="font-bold text-gray-800">Rincian Laba Rugi per Pesanan (Gabungan)</h3>
+          <p class="text-xs text-gray-500 mt-1">TikTok/Tokopedia ditampilkan sebagai Rekap Harian (tanpa data HPP satuan).</p>
+        </div>
+        <button onclick="exportTableToExcel()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition shadow-sm border border-green-700">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+          Export Excel
+        </button>
+      </div>
+      <div class="overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-left border-collapse text-[13px] whitespace-nowrap">
+          <thead class="sticky top-0 bg-white shadow-sm z-10">
+            <tr class="text-gray-600 border-b border-gray-200">
+              <th class="p-3 font-semibold sortable" onclick="handleSort('sumber')">Sumber <span id="sort-icon-sumber" class="text-[10px] text-gray-400"></span></th>
+              <th class="p-3 font-semibold sortable" onclick="handleSort('orderId')">No. Pesanan / ID <span id="sort-icon-orderId" class="text-[10px] text-gray-400"></span></th>
+              <th class="p-3 font-semibold sortable" onclick="handleSort('tanggal')">Tanggal <span id="sort-icon-tanggal" class="text-[10px] text-gray-400">↕</span></th>
+              <th class="p-3 font-semibold sortable text-right" onclick="handleSort('gross')">Omset (Rp) <span id="sort-icon-gross" class="text-[10px] text-gray-400"></span></th>
+              <th class="p-3 font-semibold sortable text-right bg-yellow-50" onclick="handleSort('totalHpp')">Total HPP <span id="sort-icon-totalHpp" class="text-[10px] text-gray-400"></span></th>
+              <th class="p-3 font-semibold sortable text-right" onclick="handleSort('net')">Pencairan (Net) <span id="sort-icon-net" class="text-[10px] text-gray-400"></span></th>
+              <th class="p-3 font-semibold sortable text-right" onclick="handleSort('potongan')">Potongan <span id="sort-icon-potongan" class="text-[10px] text-gray-400"></span></th>
+              <th class="p-3 font-semibold sortable text-right bg-indigo-50" onclick="handleSort('laba')">Laba Bersih <span id="sort-icon-laba" class="text-[10px] text-gray-400"></span></th>
+            </tr>
+          </thead>
+          <tbody id="tableBody" class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- VIEW TAB PERFORMA PRODUK -->
+    <div id="viewProduct" class="hidden bg-white rounded-xl card-shadow border border-gray-100 overflow-hidden">
+      <div class="p-5 border-b border-gray-100 bg-teal-50">
+        <h3 class="font-bold text-gray-800">📦 Analisis Margin & Performa SKU</h3>
+        <p class="text-xs text-gray-600 mt-1">SKU spesifik hanya tersedia untuk pesanan dari Shopee dan WhatsApp.</p>
+      </div>
+      <div class="overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-left border-collapse text-[13px] whitespace-nowrap">
+          <thead class="sticky top-0 bg-white shadow-sm z-10">
+            <tr class="text-gray-600 border-b border-gray-200">
+              <th class="p-3 font-semibold sortable" onclick="handleProdSort('sku')">SKU Induk <span id="sort-prod-sku" class="text-[10px] text-gray-400"></span></th>
+              <th class="p-3 font-semibold sortable text-center" onclick="handleProdSort('qty')">Qty Terjual <span id="sort-prod-qty" class="text-[10px] text-gray-400">↕</span></th>
+              <th class="p-3 font-semibold sortable text-right" onclick="handleProdSort('gross')">Omset (Gross) <span id="sort-prod-gross" class="text-[10px] text-gray-400"></span></th>
+              <th class="p-3 font-semibold sortable text-right text-orange-700 bg-orange-50" onclick="handleProdSort('hpp')">Total HPP <span id="sort-prod-hpp" class="text-[10px] text-gray-400"></span></th>
+              <th class="p-3 font-semibold sortable text-right text-indigo-700 bg-indigo-50" onclick="handleProdSort('laba')">Laba Bersih <span id="sort-prod-laba" class="text-[10px] text-gray-400"></span></th>
+              <th class="p-3 font-semibold sortable text-center text-green-700 bg-green-50" onclick="handleProdSort('margin')">Margin (%) <span id="sort-prod-margin" class="text-[10px] text-gray-400"></span></th>
+            </tr>
+          </thead>
+          <tbody id="tableProdBody" class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- VIEW TAB INPUT WA -->
+    <div id="viewWa" class="hidden max-w-2xl mx-auto">
+      <div class="bg-white rounded-xl card-shadow border border-gray-100 overflow-hidden">
+        <div class="p-6 border-b border-gray-100 bg-gradient-to-r from-green-50 to-green-100">
+          <h3 class="font-bold text-green-800 text-lg">📝 Input Transaksi WhatsApp / Direct</h3>
+          <p class="text-xs text-green-600 mt-1">Simpan data transaksi di luar marketplace.</p>
+        </div>
+        <form id="formWa" class="p-6 space-y-4" onsubmit="submitWaForm(event)">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="md:col-span-1"><label class="block text-xs font-bold text-gray-700 mb-1">Tanggal Transaksi *</label><input type="date" id="waTanggal" required class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500"></div>
+            <div class="md:col-span-1"><label class="block text-xs font-bold text-gray-700 mb-1">No. Transaksi (Opsional)</label><input type="text" id="waId" placeholder="Auto-Generate" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500"></div>
+            <div class="md:col-span-1">
+                <label class="block text-xs font-bold text-gray-700 mb-1">Toko (Opsional)</label>
+                <select id="waToko" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 bg-white">
+                    <option value="-">Tanpa Kategori</option>
+                    <option value="Diansari Plastik">Diansari Plastik</option>
+                    <option value="Mitra Diansari">Mitra Diansari</option>
+                </select>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-gray-100 pt-4">
+            <div class="md:col-span-1"><label class="block text-xs font-bold text-gray-700 mb-1">SKU Induk *</label><input type="text" id="waSku" required placeholder="Contoh: D-01" onblur="autoFillHpp()" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 uppercase"></div>
+            <div class="md:col-span-1"><label class="block text-xs font-bold text-gray-700 mb-1">Varian *</label><input type="text" id="waVarian" required placeholder="Contoh: Hitam" onblur="autoFillHpp()" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500"></div>
+            <div class="md:col-span-1"><label class="block text-xs font-bold text-gray-700 mb-1">Qty *</label><input type="number" id="waQty" required min="1" value="1" oninput="calcWaMargin()" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500"></div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><label class="block text-xs font-bold text-gray-700 mb-1">Harga Jual /pcs (Gross) *</label><input type="number" id="waHarga" required oninput="calcWaMargin()" placeholder="Rp" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500"></div>
+            <div><label class="block text-xs font-bold text-gray-700 mb-1 flex justify-between"><span>HPP /pcs (Modal) *</span><span id="waHppStatus" class="text-[10px] text-gray-400 font-normal">Ketik SKU untuk Auto-fill</span></label><input type="number" id="waHpp" required oninput="calcWaMargin()" placeholder="Rp" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500"></div>
+          </div>
+
+          <div class="bg-gray-50 p-4 rounded-lg flex justify-between items-center border border-gray-200">
+             <div><p class="text-xs text-gray-500 font-semibold">Estimasi Laba Bersih</p><h4 class="text-xl font-black text-indigo-600" id="waLabaRp">Rp 0</h4></div>
+             <div class="text-right"><p class="text-xs text-gray-500 font-semibold">Margin</p><h4 class="text-xl font-black text-green-600" id="waMarginPct">0%</h4></div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-gray-100 pt-4">
+            <div>
+              <label class="block text-xs font-bold text-gray-700 mb-1">Status Transaksi *</label>
+              <select id="waStatus" onchange="toggleWaAlasan()" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 bg-white">
+                  <option value="Sukses">✅ Sukses</option>
+                  <option value="Batal">❌ Dibatalkan</option>
+                  <option value="Retur">🔙 Diretur</option>
+              </select>
+            </div>
+            <div id="divWaAlasan" class="hidden">
+              <label class="block text-xs font-bold text-gray-700 mb-1">Alasan Insiden</label>
+              <input type="text" id="waAlasan" placeholder="Alasan batal/retur?" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500">
+            </div>
+          </div>
+
+          <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition shadow-md mt-4">Simpan Transaksi WhatsApp</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- VIEW TAB REKONSILIASI -->
+    <div id="viewRekon" class="hidden bg-white rounded-xl card-shadow border border-gray-100 overflow-hidden">
+      <div class="p-5 border-b border-gray-100 bg-gray-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+            <h3 class="font-bold text-gray-800">🕵️ Rekonsiliasi Cross-Spreadsheet</h3>
+            <p class="text-xs text-gray-500 mt-1">Hanya berlaku untuk data Shopee yang memiliki Nomor Invoice spesifik.</p>
+        </div>
+        
+        <div class="flex flex-col md:flex-row gap-3 items-end md:items-center">
+            <div class="flex gap-2">
+              <div class="bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg text-center shadow-sm"><p class="text-[9px] text-red-500 font-bold uppercase">Belum Direkap</p><h4 class="text-lg font-black text-red-600" id="rekon-belum">0</h4></div>
+              <div class="bg-green-50 border border-green-100 px-3 py-1.5 rounded-lg text-center shadow-sm"><p class="text-[9px] text-green-500 font-bold uppercase">Sesuai (Match)</p><h4 class="text-lg font-black text-green-600" id="rekon-sesuai">0</h4></div>
+              <div class="bg-orange-50 border border-orange-100 px-3 py-1.5 rounded-lg text-center shadow-sm"><p class="text-[9px] text-orange-500 font-bold uppercase">Total Insiden</p><h4 class="text-lg font-black text-orange-600" id="rekon-insiden">0</h4></div>
+            </div>
+            <button onclick="exportRekonToExcel()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 transition shadow-sm border border-blue-700 whitespace-nowrap">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Export Excel
+            </button>
+        </div>
+      </div>
+      <div id="rekonAdminInfo" class="hidden"></div>
+      <div class="overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-left border-collapse text-[13px] whitespace-nowrap">
+            <thead class="sticky top-0 bg-white shadow-sm z-10">
+                <tr class="text-gray-600 border-b border-gray-200">
+                    <th class="p-3 font-semibold sortable" onclick="handleRekonSort('orderId')">No. Pesanan <span id="sort-rekon-orderId" class="text-[10px] text-gray-400"></span></th>
+                    <th class="p-3 font-semibold sortable" onclick="handleRekonSort('tglShopee')">Tgl Shopee <span id="sort-rekon-tglShopee" class="text-[10px] text-gray-400"></span></th>
+                    <th class="p-3 font-semibold sortable bg-purple-50" onclick="handleRekonSort('tglPencatatan')">Tgl Pencatatan <span id="sort-rekon-tglPencatatan" class="text-[10px] text-gray-400"></span></th>
+                    <th class="p-3 font-semibold sortable bg-purple-50" onclick="handleRekonSort('sheetAdmin')">Lokasi Sheet Admin <span id="sort-rekon-sheetAdmin" class="text-[10px] text-gray-400"></span></th>
+                    <th class="p-3 font-semibold sortable" onclick="handleRekonSort('status')">Status Shopee <span id="sort-rekon-status" class="text-[10px] text-gray-400"></span></th>
+                    <th class="p-3 bg-blue-50 bg-opacity-30 font-semibold sortable" onclick="handleRekonSort('stRekon')">Status Rekonsiliasi <span id="sort-rekon-stRekon" class="text-[10px] text-gray-400"></span></th>
+                </tr>
+            </thead>
+            <tbody id="tableRekonBody" class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // --- API CLIENT (fetch ke Google Apps Script Web App) ---
+    function getPw() { try { return sessionStorage.getItem('deckPw') || ''; } catch (e) { return ''; } }
+    function setPw(v) { try { sessionStorage.setItem('deckPw', v); } catch (e) {} }
+    function clearPw() { try { sessionStorage.removeItem('deckPw'); } catch (e) {} }
+
+    function showLogin(msg) {
+      document.getElementById('loginOverlay').classList.remove('hidden');
+      document.getElementById('loginOverlay').classList.add('flex');
+      document.getElementById('loginError').innerText = msg || '';
+      setTimeout(() => { document.getElementById('loginPw').focus(); }, 50);
+    }
+    function hideLogin() {
+      document.getElementById('loginOverlay').classList.add('hidden');
+      document.getElementById('loginOverlay').classList.remove('flex');
+    }
+    function submitLogin(e) {
+      e.preventDefault();
+      const v = document.getElementById('loginPw').value;
+      if (!v) return;
+      setPw(v); document.getElementById('loginPw').value = '';
+      hideLogin(); loadDashboardData();
+    }
+
+    async function apiCall(action, payload) {
+      const cfg = window.APP_CONFIG || {};
+      if (!cfg.GAS_URL) throw new Error('GAS_URL belum diisi di public/config.js');
+      const hadPw = getPw() !== '';
+      const res = await fetch(cfg.GAS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // "simple request": tidak memicu preflight CORS (GAS tidak mendukung OPTIONS)
+        body: JSON.stringify({ action: action, password: getPw(), payload: payload })
+      });
+      let json = null;
+      try { json = await res.json(); } catch (e) {}
+      if (!json) throw new Error('Respon server tidak valid. Pastikan Web App GAS sudah di-deploy dengan akses "Anyone".');
+      if (json.code === 401) {
+        clearPw(); showLoading(false); showLogin(hadPw ? 'Password salah, coba lagi.' : '');
+        const err = new Error('Password diperlukan'); err.code = 401; throw err;
+      }
+      return json;
+    }
+
+    function rowsToObjects(values) {
+      const out = []; if (!values || values.length < 2) return out;
+      const hdrs = values[0];
+      for (let i = 1; i < values.length; i++) {
+        const o = {}; const r = values[i];
+        for (let j = 0; j < hdrs.length; j++) { o[hdrs[j]] = r[j] === undefined ? '' : r[j]; }
+        out.push(o);
+      }
+      return out;
+    }
+
+    function hydrateDashboard(raw) {
+      if (!raw || !raw.success) return raw || { success: false, message: 'Respon server kosong' };
+      const t = raw.tables || {};
+      const admin = {};
+      Object.keys(raw.adminOrders || {}).forEach(id => { const v = raw.adminOrders[id]; admin[id] = { tglPencatatan: v[0], sheetName: v[1] }; });
+      return {
+        success: true,
+        dataPesanan: rowsToObjects(t.pesanan), dataPenghasilan: rowsToObjects(t.penghasilan), dataMaster: rowsToObjects(t.master),
+        dataWa: rowsToObjects(t.wa), dataIklan: rowsToObjects(t.iklan), dataTiktokTokped: rowsToObjects(t.tiktok),
+        adminOrdersData: admin, adminInfo: raw.adminInfo || null, version: raw.version || null
+      };
+    }
+
+    // --- FUNGSI GLOBAL PENYERAGAMAN TANGGAL ---
+    function normalizeDateString(rawDate) {
+        if (!rawDate) return "";
+        let dStr = String(rawDate).trim().split(" ")[0].split("T")[0]; 
+        if (dStr.includes("/")) {
+            let parts = dStr.split("/");
+            if (parts.length === 3) { let year = parts[2].length <= 2 ? '20' + parts[2].slice(-2) : parts[2]; return `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`; }
+        } else if (dStr.includes("-")) {
+            let parts = dStr.split("-");
+            if (parts.length === 3) {
+                if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`;
+                let year = parts[2].length <= 2 ? '20' + parts[2].slice(-2) : parts[2]; return `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+            }
+        }
+        return dStr; 
+    }
+
+    let charts = {};
+    let globalDataPesanan = []; let globalDataPenghasilan = []; let globalDataWa = [];
+    let globalDataMaster = []; let globalDataIklan = []; let globalDataTiktokTokped = [];
+    let globalAdminOrders = {}; let globalAdminInfo = null;
+    
+    let datesRevenueGlobal = {}; let datesCountGlobal = {}; let hppDictCache = {};
+    let totalGrossAktualForAds = 0; let totalTerjualAktualForAds = 0;
+    
+    let tableDataState = []; let currentSortCol = 'tanggal'; let currentSortDesc = true;
+    let productDataState = []; let currentProdSortCol = 'qty'; let currentProdSortDesc = true;
+    let rekonDataState = []; let currentRekonSortCol = 'stRekon'; let currentRekonSortDesc = false;
+
+    // --- RENDER BERTAHAP: tabel besar hanya menggambar sebagian baris agar halaman tetap ringan.
+    // Sort, filter, dan Export Excel tetap memakai SELURUH data (tableDataState / rekonDataState).
+    const ROW_PAGE = 200; let tableLimit = ROW_PAGE; let rekonLimit = ROW_PAGE;
+    function appendMoreRow(tbody, colspan, shown, total, fnName) {
+      if (shown >= total) return;
+      let tr = document.createElement('tr');
+      tr.innerHTML = `<td colspan="${colspan}" class="p-3 text-center bg-gray-50"><span class="text-xs text-gray-500 mr-3">Menampilkan ${shown.toLocaleString('id-ID')} dari ${total.toLocaleString('id-ID')} baris (Export Excel berisi semua baris)</span><button type="button" onclick="${fnName}()" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-bold py-1 px-3 rounded transition">Tampilkan ${ROW_PAGE} lagi</button></td>`;
+      tbody.appendChild(tr);
+    }
+    function showMoreOrders() { tableLimit += ROW_PAGE; executeSortAndRender(); }
+    function showMoreRekon() { rekonLimit += ROW_PAGE; executeRekonSortAndRender(); }
+
+    document.addEventListener("DOMContentLoaded", () => { if (getPw()) loadDashboardData(); else showLogin(); });
+
+    function switchTab(tabName) {
+      ['viewDashboard', 'viewTable', 'viewProduct', 'viewRekon', 'viewWa', 'viewIklan'].forEach(id => document.getElementById(id).classList.add('hidden'));
+      ['btnTabDashboard', 'btnTabTable', 'btnTabProduct', 'btnTabRekon', 'btnTabWa', 'btnTabIklan'].forEach(id => {
+         let btn = document.getElementById(id); btn.classList.add('border-transparent', 'text-gray-500'); btn.classList.remove('border-orange-500', 'text-orange-600', 'border-green-500', 'text-green-600', 'border-pink-500', 'text-pink-500');
+      });
+      if (tabName === 'wa') { document.getElementById('viewWa').classList.remove('hidden'); document.getElementById('btnTabWa').classList.add('border-green-500', 'text-green-600'); document.getElementById('btnTabWa').classList.remove('border-transparent', 'text-gray-500'); document.getElementById('waTanggal').valueAsDate = new Date(); } 
+      else if(tabName === 'iklan') { document.getElementById('viewIklan').classList.remove('hidden'); document.getElementById('btnTabIklan').classList.add('border-pink-500', 'text-pink-500'); document.getElementById('btnTabIklan').classList.remove('border-transparent', 'text-gray-500'); } 
+      else { document.getElementById('view' + tabName.charAt(0).toUpperCase() + tabName.slice(1)).classList.remove('hidden'); let btn = document.getElementById('btnTab' + tabName.charAt(0).toUpperCase() + tabName.slice(1)); btn.classList.add('border-orange-500', 'text-orange-600'); btn.classList.remove('border-transparent', 'text-gray-500'); }
+    }
+
+    function showLoading(show, title = 'Memproses Data', text = 'Mohon tunggu sebentar...', progress = null) { 
+        document.getElementById('loader').style.display = show ? 'flex' : 'none'; document.getElementById('loaderTitle').innerText = title; document.getElementById('loaderText').innerText = text; 
+        let pContainer = document.getElementById('progressContainer'); let pBar = document.getElementById('progressBar');
+        if(progress !== null) { pContainer.style.display = 'block'; pBar.style.width = progress + '%'; } else { pContainer.style.display = 'none'; }
+    }
+
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast'); toast.innerText = message;
+      toast.className = `fixed bottom-5 right-5 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 z-50 max-w-md w-full md:w-auto ${isError ? 'bg-red-500' : 'bg-gray-800'} translate-y-0 opacity-100`;
+      setTimeout(() => { toast.classList.remove('translate-y-0', 'opacity-100'); toast.classList.add('translate-y-20', 'opacity-0'); }, 5000); 
+    }
+
+    function handleFileUpload(event) {
+      const file = event.target.files[0]; if (!file) return;
+      const storeName = document.getElementById('uploadStoreSelect').value; 
+      const fileType = document.getElementById('uploadTypeSelect').value; 
+      
+      showLoading(true, `Membaca File ${file.name.endsWith('.csv') ? 'CSV' : 'Excel'}`, `Memproses data ${fileType}...`); 
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, {type: 'array'});
+          let worksheet, rawJson, expectedHeaders, keyword;
+          
+          if (fileType === 'penghasilan') {
+            let s = workbook.SheetNames.find(x => x.toLowerCase().includes('penghasilan')) || workbook.SheetNames[4] || workbook.SheetNames[0];
+            worksheet = workbook.Sheets[s]; expectedHeaders = ["No. Pesanan", "Lihat berdasarkan", "No Pengajuan", "ID Produk", "Nama Produk", "Waktu Pesanan Dibuat", "Tanggal Dana Dilepaskan", "Total Penghasilan"]; keyword = 'nopesanan';
+          } else if (fileType === 'iklan') {
+            worksheet = workbook.Sheets[workbook.SheetNames[0]]; expectedHeaders = ["Nama Iklan", "Jenis Iklan", "Kode Produk", "Tanggal Mulai", "Tanggal Selesai", "Biaya", "Omzet Penjualan", "Produk Terjual"]; keyword = 'namaiklan';
+          } else if (fileType === 'tiktok' || fileType === 'tokopedia') {
+            worksheet = workbook.Sheets[workbook.SheetNames[0]]; expectedHeaders = ["Tanggal", "GMV", "Pesanan", "Pembeli", "Produk terjual", "Pengembalian dana", "Pesanan SKU", "Pendapatan bruto"]; keyword = 'gmv';
+          } else {
+            worksheet = workbook.Sheets[workbook.SheetNames[0]]; expectedHeaders = ["No. Pesanan", "Status Pesanan", "Alasan Pembatalan", "Status Pembatalan/Pengembalian", "Waktu Pesanan Dibuat", "Waktu Pengiriman Diatur", "Metode Pembayaran", "SKU Induk", "Nama Variasi", "Jumlah", "Harga Setelah Diskon", "Provinsi"]; keyword = 'nopesanan';
+          }
+
+          const rawArr = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          let headerIdx = 0; let iklanPeriode = ""; 
+          
+          for (let i = 0; i < Math.min(30, rawArr.length); i++) {
+              if (rawArr[i] && rawArr[i].length > 0) {
+                  if (fileType === 'iklan' && String(rawArr[i][0] || "").toLowerCase().replace(/\s+/g, '') === "periode") {
+                      iklanPeriode = normalizeDateString(String(rawArr[i][1] || "").split("-")[0].trim());
+                  }
+                  
+                  let isHeader = false;
+                  let strArr = rawArr[i].map(c => String(c).toLowerCase().replace(/\s+/g, ''));
+                  
+                  if (fileType === 'tiktok' || fileType === 'tokopedia') {
+                      if (strArr.includes('tanggal') && (strArr.includes('gmv') || strArr.includes('pesanan') || strArr.some(v => v.includes('gmv')))) { isHeader = true; }
+                  } else {
+                      isHeader = strArr.some(val => val === keyword || val.includes(keyword));
+                  }
+
+                  if (isHeader) { headerIdx = i; break; }
+              }
+          }
+
+          if (fileType === 'iklan' && !iklanPeriode) iklanPeriode = new Date().toISOString().split('T')[0];
+          rawJson = XLSX.utils.sheet_to_json(worksheet, { range: headerIdx, defval: "", raw: false });
+          
+          const cleanJson = rawJson.map(row => {
+            let newRow = {};
+            for (let key in row) {
+              let normKey = key.replace(/\s+/g, '').toLowerCase(); 
+              let matchedHeader = expectedHeaders.find(eh => eh.replace(/\s+/g, '').toLowerCase() === normKey);
+              if (matchedHeader) {
+                let val = String(row[key] || "").trim();
+                if (["Harga Setelah Diskon", "Total Penghasilan", "Biaya", "Omzet Penjualan", "GMV", "Pendapatan bruto", "Pengembalian dana"].includes(matchedHeader)) {
+                    if (val.endsWith('.00') || val.endsWith(',00')) val = val.slice(0, -3); 
+                    let clean = val.replace(/Rp/gi, '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.'); 
+                    newRow[matchedHeader] = parseInt(parseFloat(clean)) || 0;
+                } else if (["Jumlah", "Produk Terjual", "Produk terjual", "Pesanan", "Pembeli", "Pesanan SKU"].includes(matchedHeader)) { 
+                    newRow[matchedHeader] = parseInt(val.replace(/[^0-9]/g, '')) || 0; 
+                } else { newRow[matchedHeader] = val; }
+              }
+            } 
+            
+            if (fileType === 'tiktok' || fileType === 'tokopedia') {
+                let finalRow = {};
+                finalRow["Tanggal"] = normalizeDateString(newRow["Tanggal"]);
+                finalRow["Platform"] = fileType === 'tiktok' ? 'TikTok Shop' : 'Tokopedia';
+                finalRow["GMV (Omset)"] = newRow["GMV"] || 0;
+                finalRow["Pendapatan Bruto"] = newRow["Pendapatan bruto"] !== undefined ? newRow["Pendapatan bruto"] : (newRow["GMV"] || 0);
+                finalRow["Pesanan"] = newRow["Pesanan"] || 0;
+                finalRow["Pembeli"] = newRow["Pembeli"] || 0;
+                finalRow["Produk Terjual"] = newRow["Produk terjual"] || 0;
+                finalRow["Pengembalian Dana"] = newRow["Pengembalian dana"] || 0;
+                finalRow["Pesanan SKU"] = newRow["Pesanan SKU"] || 0;
+                return finalRow;
+            }
+
+            if (fileType === 'iklan') newRow["Periode Laporan"] = iklanPeriode;
+            return newRow;
+
+          }).filter(row => {
+              if (fileType === 'iklan') return row["Nama Iklan"] !== undefined && String(row["Nama Iklan"]).trim() !== "" && String(row["Nama Iklan"]).toLowerCase() !== "total";
+              if (fileType === 'tiktok' || fileType === 'tokopedia') return row["Tanggal"] !== undefined && String(row["Tanggal"]).trim() !== "" && row["Tanggal"] !== "Total";
+              return row["No. Pesanan"] !== undefined && String(row["No. Pesanan"]).trim() !== "";
+          });
+          
+          if(cleanJson.length === 0) { showLoading(false); showToast("Gagal memproses file! Pastikan format sesuai.", true); return; }
+
+          const CHUNK_SIZE = 500; let chunks = [];
+          for (let i = 0; i < cleanJson.length; i += CHUNK_SIZE) { chunks.push(cleanJson.slice(i, i + CHUNK_SIZE)); }
+          
+          let currentChunk = 0; let totalInserted = 0; let totalUpdated = 0;
+          function sendNextChunk() {
+              if (currentChunk >= chunks.length) { showLoading(false); showToast(`Upload Selesai! ${totalInserted} ditambahkan, ${totalUpdated} diupdate.`); document.getElementById('fileInput').value = ''; loadDashboardData(); return; }
+              let startRow = (currentChunk * CHUNK_SIZE) + 1; let endRow = Math.min((currentChunk + 1) * CHUNK_SIZE, cleanJson.length);
+              showLoading(true, `Mengirim ke Database`, `Baris ${startRow} - ${endRow} dari ${cleanJson.length}...`, Math.round((currentChunk / chunks.length) * 100));
+              apiCall('upload', { data: chunks[currentChunk], storeName: storeName, fileType: fileType }).then(r => {
+                  if (r.success) { totalInserted += r.inserted || 0; totalUpdated += r.updated || 0; currentChunk++; sendNextChunk(); } 
+                  else { showLoading(false); showToast("Proses terhenti: " + r.message, true); }
+              }).catch(err => { showLoading(false); if (err.code !== 401) showToast(err.message || "Koneksi gagal", true); });
+          } sendNextChunk(); 
+        } catch(error) { showLoading(false); showToast(error.message, true); }
+      }; reader.readAsArrayBuffer(file);
+    }
+
+    function toggleWaAlasan() {
+      let st = document.getElementById('waStatus').value;
+      if(st === 'Batal' || st === 'Retur') { document.getElementById('divWaAlasan').classList.remove('hidden'); document.getElementById('waAlasan').required = true; } 
+      else { document.getElementById('divWaAlasan').classList.add('hidden'); document.getElementById('waAlasan').required = false; document.getElementById('waAlasan').value = ''; }
+      calcWaMargin();
+    }
+    function autoFillHpp() {
+      let sku = document.getElementById('waSku').value.trim(); let varian = document.getElementById('waVarian').value.trim(); let statusEl = document.getElementById('waHppStatus');
+      if (sku && hppDictCache[`${sku}_${varian}`] !== undefined) { document.getElementById('waHpp').value = hppDictCache[`${sku}_${varian}`]; statusEl.innerText = "✅ Auto-filled dari Master"; statusEl.classList.add("text-green-500"); statusEl.classList.remove("text-gray-400"); calcWaMargin(); } 
+      else { statusEl.innerText = "Ketik SKU untuk Auto-fill"; statusEl.classList.remove("text-green-500"); statusEl.classList.add("text-gray-400"); }
+    }
+    function calcWaMargin() {
+      let qty = parseInt(document.getElementById('waQty').value) || 0; let harga = parseFloat(document.getElementById('waHarga').value) || 0; let hpp = parseFloat(document.getElementById('waHpp').value) || 0;
+      let totalGross = harga * qty; let totalHpp = hpp * qty; let laba = totalGross - totalHpp; let margin = totalGross > 0 ? (laba / totalGross * 100) : 0;
+      let st = document.getElementById('waStatus').value; if(st === 'Batal' || st === 'Retur') { laba = 0; margin = 0; }
+      document.getElementById('waLabaRp').innerText = 'Rp ' + laba.toLocaleString('id-ID'); document.getElementById('waMarginPct').innerText = margin.toFixed(1) + '%';
+    }
+    function submitWaForm(e) {
+      e.preventDefault();
+      let qty = parseInt(document.getElementById('waQty').value) || 0; let harga = parseFloat(document.getElementById('waHarga').value) || 0; let hpp = parseFloat(document.getElementById('waHpp').value) || 0;
+      let laba = (harga - hpp) * qty; let margin = (harga * qty > 0) ? (laba / (harga * qty) * 100) : 0;
+      let st = document.getElementById('waStatus').value; if(st === 'Batal' || st === 'Retur') { laba = 0; margin = 0; }
+      let data = { tanggal: document.getElementById('waTanggal').value, orderId: document.getElementById('waId').value.trim(), sku: document.getElementById('waSku').value.trim().toUpperCase(), varian: document.getElementById('waVarian').value.trim(), qty: qty, hargaJual: harga, hpp: hpp, status: st, alasan: document.getElementById('waAlasan').value, laba: laba, margin: margin, toko: document.getElementById('waToko').value };
+      showLoading(true, "Menyimpan Transaksi WA", "Mengirim ke database...");
+      apiCall('saveWa', data).then(res => {
+          showLoading(false);
+          if (res.success) { showToast(res.message); document.getElementById('formWa').reset(); document.getElementById('waTanggal').valueAsDate = new Date(); document.getElementById('waLabaRp').innerText="Rp 0"; document.getElementById('waMarginPct').innerText="0%"; loadDashboardData(); } 
+          else { showToast(res.message, true); }
+      }).catch(err => { showLoading(false); if (err.code !== 401) showToast(err.message || "Koneksi gagal", true); });
+    }
+
+    // --- MUAT DATA + SINKRONISASI OTOMATIS ---
+    // loadDashboardData(true) = refresh senyap (tanpa layar loading), dipakai polling & tombol refresh.
+    let dataVersionClient = null; let autoRefreshTimer = null; let lastSyncAt = null; let syncInFlight = false;
+    const POLL_MS = 60000;
+
+    function fmtClock(d) { return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+    function setSyncState(state) {
+      const t = document.getElementById('lastUpdatedText'), ic = document.getElementById('refreshIcon'), b = document.getElementById('btnRefresh'); if (!t) return;
+      if (state === 'loading') { t.innerText = 'Memperbarui...'; ic.classList.add('animate-spin'); return; }
+      ic.classList.remove('animate-spin');
+      if (state === 'error') { t.innerText = 'Gagal sinkron' + (lastSyncAt ? ' (terakhir ' + fmtClock(lastSyncAt) + ')' : ''); b.classList.add('text-red-500'); return; }
+      b.classList.remove('text-red-500'); t.innerText = 'Sinkron ' + fmtClock(lastSyncAt);
+    }
+    function markSynced() { lastSyncAt = new Date(); setSyncState('ok'); }
+    function isBusyNow() { return syncInFlight || document.getElementById('loader').style.display === 'flex'; }
+
+    function loadDashboardData(silent) {
+      if (!silent) showLoading(true, 'Mengunduh Data Omnichannel', 'Sinkronisasi 4 Platform dan Admin...');
+      syncInFlight = true; setSyncState('loading');
+      return apiCall('getData').then(raw => {
+          syncInFlight = false; if (!silent) showLoading(false);
+          const response = hydrateDashboard(raw);
+          if(response.success) {
+            globalDataPesanan = response.dataPesanan; globalDataPenghasilan = response.dataPenghasilan;
+            globalDataWa = response.dataWa || []; globalDataIklan = response.dataIklan || [];
+            globalDataTiktokTokped = response.dataTiktokTokped || []; globalDataMaster = response.dataMaster || []; 
+            globalAdminOrders = response.adminOrdersData || {}; globalAdminInfo = response.adminInfo || null;
+            dataVersionClient = response.version || null;
+            
+            hppDictCache = {};
+            globalDataMaster.forEach(row => { let hppVal = parseInt(String(row["HPP (Modal)"]).replace(/[^0-9]/g, '')) || 0; hppDictCache[`${String(row["SKU Induk"]||"").trim()}_${String(row["Nama Variasi"]||"").trim()}`] = hppVal; });
+            populateMonthDropdown(globalDataPesanan, globalDataWa, globalDataIklan, globalDataTiktokTokped); applyFilter(); 
+            markSynced(); startAutoRefresh();
+          } else { setSyncState('error'); if (!silent) showToast(response.message, true); }
+      }).catch(err => { syncInFlight = false; if (!silent) showLoading(false); setSyncState('error'); if (err.code !== 401 && !silent) showToast(err.message || 'Gagal memuat data', true); });
+    }
+
+    // Tanya server "ada data baru?" (ringan). Data hanya diunduh ulang kalau versinya berubah.
+    async function checkForUpdates() {
+      if (document.hidden || isBusyNow() || !getPw()) return;
+      try {
+        const r = await apiCall('ping');
+        if (!r || !r.success || !r.version) return;                  // server lama / gagal: abaikan, coba lagi nanti
+        if (r.version !== dataVersionClient) await loadDashboardData(true); else markSynced();
+      } catch (e) { if (e.code !== 401) setSyncState('error'); }
+    }
+    function startAutoRefresh() {
+      if (autoRefreshTimer) return;
+      autoRefreshTimer = setInterval(checkForUpdates, POLL_MS);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden && (!lastSyncAt || Date.now() - lastSyncAt.getTime() > 30000)) checkForUpdates(); });
+    }
+    function manualRefresh() { if (isBusyNow()) return; loadDashboardData(true); }
+
+    function populateMonthDropdown(dataShopee, dataWa, dataIklan, dataTT) {
+      let months = new Set();
+      dataShopee.forEach(r => { let d = normalizeDateString(r["Waktu Pesanan Dibuat"]); if(d.length >= 7) months.add(d.substring(0, 7)); });
+      dataWa.forEach(r => { let d = normalizeDateString(r["Tanggal"]); if(d.length >= 7) months.add(d.substring(0,7)); });
+      dataIklan.forEach(r => { let d = r["Periode Laporan"] ? normalizeDateString(r["Periode Laporan"]) : normalizeDateString(r["Tanggal Mulai"]); if(d && d.length >= 7) months.add(d.substring(0,7)); });
+      dataTT.forEach(r => { let d = normalizeDateString(r["Tanggal"]); if(d.length >= 7) months.add(d.substring(0,7)); });
+
+      let selectEl = document.getElementById('monthFilter'); let currentVal = selectEl.value; selectEl.innerHTML = '<option value="ALL">Semua Bulan</option>';
+      let sortedMonths = Array.from(months).sort().reverse(); let namaBulan = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+      sortedMonths.forEach(m => { let [yyyy, mm] = m.split('-'); let option = document.createElement('option'); option.value = m; option.innerText = `${namaBulan[parseInt(mm)]} ${yyyy}`; selectEl.appendChild(option); });
+      if(sortedMonths.includes(currentVal)) selectEl.value = currentVal; selectEl.classList.remove('hidden'); 
+    }
+
+    function applyFilter() {
+      let selectedMonth = document.getElementById('monthFilter').value; 
+      let selectedMain = document.getElementById('mainFilter').value; 
+      
+      let filteredPesanan = []; let filteredPenghasilan = []; let filteredWa = []; let filteredIklan = []; let filteredTT = [];
+
+      if (selectedMain === 'ALL' || selectedMain.startsWith('SHOPEE')) {
+        filteredPesanan = globalDataPesanan.filter(row => {
+          let matchMonth = (selectedMonth === "ALL") ? true : normalizeDateString(row["Waktu Pesanan Dibuat"]).startsWith(selectedMonth);
+          let matchStore = (selectedMain === 'ALL') ? true : (selectedMain === 'SHOPEE_DIANSARI' ? String(row["Nama Toko"]).toLowerCase() === 'diansari plastik' : String(row["Nama Toko"]).toLowerCase() === 'mitra diansari');
+          return matchMonth && matchStore;
+        });
+        filteredPenghasilan = globalDataPenghasilan.filter(row => {
+          if (String(row["Lihat berdasarkan"] || "").trim().toLowerCase() !== "order") return false; 
+          let matchMonth = (selectedMonth === "ALL") ? true : normalizeDateString(row["Waktu Pesanan Dibuat"]).startsWith(selectedMonth);
+          let matchStore = (selectedMain === 'ALL') ? true : (selectedMain === 'SHOPEE_DIANSARI' ? String(row["Nama Toko"]).toLowerCase() === 'diansari plastik' : String(row["Nama Toko"]).toLowerCase() === 'mitra diansari');
+          return matchMonth && matchStore;
+        });
+        filteredIklan = globalDataIklan.filter(row => {
+          let dateStr = row["Periode Laporan"] ? normalizeDateString(row["Periode Laporan"]) : normalizeDateString(row["Tanggal Mulai"]);
+          let matchMonth = (selectedMonth === "ALL") ? true : dateStr.startsWith(selectedMonth);
+          let matchStore = (selectedMain === 'ALL') ? true : (selectedMain === 'SHOPEE_DIANSARI' ? String(row["Nama Toko"]).toLowerCase() === 'diansari plastik' : String(row["Nama Toko"]).toLowerCase() === 'mitra diansari');
+          return matchMonth && matchStore;
+        });
+      }
+
+      if (selectedMain === 'ALL' || selectedMain === 'WA_ALL') {
+         filteredWa = globalDataWa.filter(row => { return (selectedMonth === "ALL") ? true : normalizeDateString(row["Tanggal"]).startsWith(selectedMonth); });
+      }
+
+      if (selectedMain === 'ALL' || selectedMain.startsWith('TIKTOK') || selectedMain.startsWith('TOKPED')) {
+         filteredTT = globalDataTiktokTokped.filter(row => {
+            let matchMonth = (selectedMonth === "ALL") ? true : normalizeDateString(row["Tanggal"]).startsWith(selectedMonth);
+            let plat = String(row["Platform"]).toUpperCase(); let store = String(row["Nama Toko"]).toUpperCase();
+            
+            let matchSource = false;
+            if (selectedMain === 'ALL') matchSource = true;
+            else if (selectedMain === 'TIKTOK_DIANSARI' && plat.includes('TIKTOK') && store.includes('DIANSARI PLASTIK')) matchSource = true;
+            else if (selectedMain === 'TIKTOK_MITRA' && plat.includes('TIKTOK') && store.includes('MITRA DIANSARI')) matchSource = true;
+            else if (selectedMain === 'TOKPED_DIANSARI' && plat.includes('TOKOPEDIA') && store.includes('DIANSARI PLASTIK')) matchSource = true;
+            else if (selectedMain === 'TOKPED_MITRA' && plat.includes('TOKOPEDIA') && store.includes('MITRA DIANSARI')) matchSource = true;
+            
+            return matchMonth && matchSource;
+         });
+      }
+      
+      prepareTableData(filteredPesanan, filteredPenghasilan, filteredWa, filteredTT); 
+      renderDashboard(filteredPesanan, filteredPenghasilan, filteredWa, filteredTT);
+      prepareProductData(filteredPesanan, filteredWa);
+      renderIklanDashboard(filteredIklan); 
+      
+      if(selectedMain === 'ALL' || selectedMain.startsWith('SHOPEE')) { prepareRekonData(filteredPesanan); } else { prepareRekonData([]); }
+    }
+
+    function prepareTableData(dataPesanan, dataPenghasilan, dataWa, dataTT) {
+      let orderMap = {};
+      
+      dataPesanan.forEach(row => {
+        let orderId = String(row["No. Pesanan"] || "").trim(); if(!orderId) return;
+        let isBatal = String(row["Status Pesanan"]).toLowerCase().includes("batal") || String(row["Alasan Pembatalan"]).trim() !== "";
+        let isRetur = String(row["Status Pembatalan/Pengembalian"]).toLowerCase().includes("disetujui");
+        if (!isBatal && !isRetur) {
+          let qty = parseInt(row["Jumlah"]) || 1; let harga = parseInt(row["Harga Setelah Diskon"]) || 0; let gross = harga * qty;
+          let sku = String(row["SKU Induk"] || "").trim(); let variasi = String(row["Nama Variasi"] || "").trim();
+          let hpp_item = hppDictCache[`${sku}_${variasi}`]; let isHppSet = (hpp_item !== undefined); if (!isHppSet) hpp_item = 0; 
+          let rawDate = normalizeDateString(row["Waktu Pesanan Dibuat"]);
+
+          if (!orderMap[orderId]) orderMap[orderId] = { orderId: orderId, sumber: 'Shopee', tanggal: rawDate, gross: 0, net: 0, totalHpp: 0, missingHpp: false };
+          orderMap[orderId].gross += gross; orderMap[orderId].totalHpp += (hpp_item * qty); if (!isHppSet) orderMap[orderId].missingHpp = true;
+        }
+      });
+
+      dataPenghasilan.forEach(row => {
+        let orderId = String(row["No. Pesanan"] || "").trim(); if(!orderId) return; let net = parseInt(row["Total Penghasilan"]) || 0;
+        if (orderMap[orderId]) orderMap[orderId].net += net;
+        else { orderMap[orderId] = { orderId: orderId, sumber: 'Shopee', tanggal: normalizeDateString(row["Waktu Pesanan Dibuat"]), gross: 0, net: net, totalHpp: 0, missingHpp: false }; }
+      });
+
+      dataWa.forEach(row => {
+         let orderId = String(row["No. Transaksi"]||"").trim(); let st = String(row["Status"]||"").toLowerCase();
+         if(st === 'sukses') {
+            let qty = parseInt(row["Qty"])||0; let hrg = parseFloat(row["Harga Jual (Gross)"])||0; let hpp = parseFloat(row["HPP (Modal)"])||0; let gross = qty * hrg; let tHpp = qty * hpp;
+            if(!orderMap[orderId]) orderMap[orderId] = { orderId: orderId, sumber: 'WhatsApp', tanggal: normalizeDateString(row["Tanggal"]), gross:0, net:0, totalHpp:0, missingHpp: false };
+            orderMap[orderId].gross += gross; orderMap[orderId].net += gross; orderMap[orderId].totalHpp += tHpp; 
+         }
+      });
+
+      dataTT.forEach(row => {
+         let tgl = normalizeDateString(row["Tanggal"]); let plat = row["Platform"];
+         let orderId = `REKAP-${plat.toUpperCase().substring(0,3)}-${tgl.replace(/-/g, '')}-${String(row["Nama Toko"]).substring(0,3).toUpperCase()}`;
+         let gross = parseInt(row["GMV (Omset)"]) || 0; let net = parseInt(row["Pendapatan Bruto"]) || 0;
+         
+         if(gross > 0 || net > 0) {
+             if (!orderMap[orderId]) { orderMap[orderId] = { orderId: orderId, sumber: plat, tanggal: tgl, gross: 0, net: 0, totalHpp: 0, missingHpp: false }; }
+             orderMap[orderId].gross += gross; orderMap[orderId].net += net;
+         }
+      });
+
+      tableDataState = Object.values(orderMap).map(item => {
+        let potPct = 0; let totalPotonganRp = 0;
+        if (item.sumber === 'Shopee') {
+          if (item.gross > 0 && item.net > 0) { totalPotonganRp = item.gross - item.net; let sisa = totalPotonganRp - 1250; if(sisa < 0) sisa = 0; potPct = (sisa / item.gross) * 100; }
+        } else if (item.sumber === 'TikTok Shop' || item.sumber === 'Tokopedia') {
+          if (item.gross > 0 && item.net > 0) { totalPotonganRp = item.gross - item.net; potPct = (totalPotonganRp / item.gross) * 100; }
+        }
+        item.potongan = potPct; item.totalPotonganRp = totalPotonganRp; 
+        item.laba = item.net > 0 ? (item.net - item.totalHpp) : (0 - item.totalHpp);
+        return item;
+      });
+
+      currentSortCol = 'tanggal'; currentSortDesc = true; tableLimit = ROW_PAGE; executeSortAndRender();
+    }
+
+    function handleSort(col) { if (currentSortCol === col) currentSortDesc = !currentSortDesc; else { currentSortCol = col; currentSortDesc = true; } tableLimit = ROW_PAGE; executeSortAndRender(); }
+    function executeSortAndRender() {
+      ['sumber', 'orderId', 'tanggal', 'gross', 'totalHpp', 'net', 'potongan', 'laba'].forEach(c => { document.getElementById(`sort-icon-${c}`).innerText = ''; });
+      document.getElementById(`sort-icon-${currentSortCol}`).innerText = currentSortDesc ? '↓' : '↑';
+
+      tableDataState.sort((a, b) => {
+        let valA = a[currentSortCol]; let valB = b[currentSortCol];
+        if (typeof valA === 'string' && typeof valB === 'string') { if(valA < valB) return currentSortDesc ? 1 : -1; if(valA > valB) return currentSortDesc ? -1 : 1; return 0; } 
+        else return currentSortDesc ? valB - valA : valA - valB;
+      });
+
+      let tbody = document.getElementById('tableBody'); tbody.innerHTML = '';
+      if (tableDataState.length === 0) { tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-500">Tidak ada data.</td></tr>`; return; }
+
+      tableDataState.slice(0, tableLimit).forEach(data => {
+        let rowClass = "hover:bg-gray-50 transition"; let netHtml = ""; let potHtml = ""; let hppHtml = ""; let labaHtml = "";
+        
+        let badgeSumber = "";
+        if(data.sumber === 'WhatsApp') badgeSumber = `<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-[10px] font-bold">WhatsApp</span>`;
+        else if (data.sumber === 'Shopee') badgeSumber = `<span class="bg-orange-100 text-orange-700 px-2 py-1 rounded text-[10px] font-bold">Shopee</span>`;
+        else if (data.sumber === 'TikTok Shop') badgeSumber = `<span class="bg-gray-800 text-white px-2 py-1 rounded text-[10px] font-bold">TikTok Shop</span>`;
+        else badgeSumber = `<span class="bg-green-100 text-green-700 border border-green-300 px-2 py-1 rounded text-[10px] font-bold">Tokopedia</span>`;
+
+        if(data.sumber === 'TikTok Shop' || data.sumber === 'Tokopedia') { hppHtml = `<span class="text-gray-400 italic font-semibold">- (Rekap)</span>`; }
+        else { if (data.missingHpp) hppHtml = `<div class="text-orange-500 font-bold">Rp ${data.totalHpp.toLocaleString('id-ID')}</div><div class="text-[10px] text-orange-500">⚠ Set HPP</div>`; else hppHtml = `Rp ${data.totalHpp.toLocaleString('id-ID')}`; }
+
+        if (data.net > 0) {
+          netHtml = `<span class="text-green-600 font-bold">Rp ${data.net.toLocaleString('id-ID')}</span>`;
+          if(data.sumber === 'WhatsApp') potHtml = `<span class="text-gray-400 font-bold">0%</span>`;
+          else if(data.sumber === 'Shopee') potHtml = `<div class="flex flex-col items-end"><span class="text-gray-700 font-bold">1.25k + ${data.potongan.toFixed(1)}%</span><span class="text-[10px] text-gray-400">Rp ${data.totalPotonganRp.toLocaleString('id-ID')}</span></div>`;
+          else potHtml = `<div class="flex flex-col items-end"><span class="text-gray-700 font-bold">${data.potongan.toFixed(1)}%</span><span class="text-[10px] text-gray-400">Rp ${data.totalPotonganRp.toLocaleString('id-ID')}</span></div>`;
+          
+          if(data.sumber === 'WhatsApp') rowClass = "hover:bg-green-50 transition";
+          else if (data.sumber === 'TikTok Shop') rowClass = "hover:bg-gray-100 transition";
+          else if (data.sumber === 'Tokopedia') rowClass = "hover:bg-emerald-50 transition";
+          else rowClass = "hover:bg-orange-50 transition";
+          
+          let labaBersih = data.net - data.totalHpp; 
+          labaHtml = `<span class="${labaBersih > 0 ? 'text-indigo-600' : 'text-red-500'} font-black text-sm">Rp ${labaBersih.toLocaleString('id-ID')}</span>`;
+        } else if (data.net < 0) {
+          netHtml = `<span class="text-red-600 font-bold">- Rp ${Math.abs(data.net).toLocaleString('id-ID')}</span>`; potHtml = `<span class="text-[10px] text-red-500 font-bold italic">Retur</span>`; labaHtml = `<span class="text-red-500 font-bold">-</span>`; rowClass = "bg-red-50 hover:bg-red-100 transition";
+        } else {
+          netHtml = `<span class="text-red-500 font-bold text-[10px] bg-red-10 px-2 py-1 rounded">BELUM CAIR</span>`; potHtml = `<span class="text-gray-400">-</span>`; labaHtml = `<div class="text-orange-500 font-bold text-[10px] leading-tight">Modal Tertahan:<br>-Rp ${data.totalHpp.toLocaleString('id-ID')}</div>`;
+        }
+
+        let tr = document.createElement('tr'); tr.className = `border-b border-gray-100 text-gray-700 ${rowClass}`;
+        tr.innerHTML = `<td class="p-3">${badgeSumber}</td><td class="p-3 font-mono text-xs">${data.orderId}</td><td class="p-3">${data.tanggal}</td><td class="p-3 text-right">Rp ${data.gross.toLocaleString('id-ID')}</td><td class="p-3 text-right bg-yellow-50 bg-opacity-30">${hppHtml}</td><td class="p-3 text-right">${netHtml}</td><td class="p-3 text-right">${potHtml}</td><td class="p-3 text-right bg-indigo-50 bg-opacity-30">${labaHtml}</td>`;
+        tbody.appendChild(tr);
+      });
+      appendMoreRow(tbody, 8, Math.min(tableLimit, tableDataState.length), tableDataState.length, 'showMoreOrders');
+    }
+
+    function renderChart(canvasId, type, labels, data, labelString, colors, isHorizontal = false) {
+      if (charts[canvasId]) charts[canvasId].destroy();
+      let options = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: type === 'doughnut' } } };
+      if (type === 'bar' && isHorizontal) { options.indexAxis = 'y'; }
+      charts[canvasId] = new Chart(document.getElementById(canvasId), { type: type, data: { labels: labels, datasets: [{ label: labelString, data: data, backgroundColor: type === 'doughnut' ? colors : colors, borderRadius: type === 'bar' ? 4 : 0 }] }, options: options });
+    }
+
+    function renderDashboard(dataPesanan, dataPenghasilan, dataWa, dataTT) {
+      document.getElementById('trendChartTitle').innerText = (document.getElementById('monthFilter').value === "ALL") ? 'Tren Pemesanan Bulanan (Gross Revenue Rp)' : 'Tren Pemesanan Harian (Gross Revenue Rp)';
+      
+      let totalGross = 0, totalNet = 0, totalItems = 0, validInv = 0; let batalInv = 0, totalBatalNominal = 0; let returInv = 0, totalReturNominal = 0;
+      datesCountGlobal = {}; let skuCount = {}; let provinceCount = {}; let paymentCount = {}; let cancelReasons = {}; datesRevenueGlobal = {};
+
+      let shopeeOrders = new Set();
+      dataPesanan.forEach(row => {
+        let orderId = String(row["No. Pesanan"] || "").trim(); if(!orderId) return; 
+        let qty = parseInt(row["Jumlah"]) || 1; let harga = parseInt(row["Harga Setelah Diskon"]) || 0; let gross = harga * qty;
+        let stPengembalian = String(row["Status Pembatalan/Pengembalian"] || "").trim().toLowerCase(); let stPesanan = String(row["Status Pesanan"] || "").trim().toLowerCase(); let alasan = String(row["Alasan Pembatalan"] || "").trim();
+        
+        if (stPengembalian.includes("permintaan disetujui")) { returInv++; totalReturNominal += gross; let alasanTeks = (alasan || stPengembalian || "Retur").replace(/permintaan disetujui/ig, "Retur Shopee"); cancelReasons[alasanTeks] = (cancelReasons[alasanTeks] || 0) + 1; }
+        else if (stPesanan.includes("batal") || stPesanan.includes("dibatalkan") || (alasan !== "")) { batalInv++; totalBatalNominal += gross; let alasanTeks = alasan || stPesanan || "Dibatalkan Pembeli"; cancelReasons[alasanTeks] = (cancelReasons[alasanTeks] || 0) + 1; }
+        else {
+          shopeeOrders.add(orderId); totalItems += qty; totalGross += gross;
+          let payMethod = String(row["Metode Pembayaran"] || "Lainnya").trim(); paymentCount["Shopee: " + payMethod] = (paymentCount["Shopee: " + payMethod] || 0) + 1;
+          let prov = String(row["Provinsi"] || "Lainnya").trim(); provinceCount["Shopee - " + prov] = (provinceCount["Shopee - " + prov] || 0) + 1;
+          let dateStr = normalizeDateString(row["Waktu Pesanan Dibuat"]);
+          if(dateStr.length >= 7) { let key = (document.getElementById('monthFilter').value === "ALL") ? dateStr.substring(0, 7) : dateStr; datesCountGlobal[key] = (datesCountGlobal[key] || 0) + 1; datesRevenueGlobal[key] = (datesRevenueGlobal[key] || 0) + gross; }
+          let sku = String(row["SKU Induk"] || "Tanpa SKU").trim(); skuCount[sku] = (skuCount[sku] || 0) + qty;
+        }
+      });
+      dataPenghasilan.forEach(row => { totalNet += (parseInt(row["Total Penghasilan"]) || 0); });
+      validInv += shopeeOrders.size;
+
+      dataWa.forEach(row => {
+         let st = String(row["Status"]||"").toLowerCase(); let qty = parseInt(row["Qty"])||0; let harga = parseFloat(row["Harga Jual (Gross)"])||0; let gross = qty * harga;
+         if(st === 'batal') { batalInv++; totalBatalNominal += gross; let alasan = String(row["Alasan"] || "Batal WA (Tanpa Alasan)").trim(); cancelReasons[alasan] = (cancelReasons[alasan] || 0) + 1; }
+         else if(st === 'retur') { returInv++; totalReturNominal += gross; let alasan = String(row["Alasan"] || "Retur WA (Tanpa Alasan)").trim(); cancelReasons[alasan] = (cancelReasons[alasan] || 0) + 1; }
+         else {
+            validInv++; totalItems += qty; totalGross += gross; totalNet += gross; 
+            paymentCount["Direct (WA)"] = (paymentCount["Direct (WA)"] || 0) + 1; provinceCount["WhatsApp (Direct)"] = (provinceCount["WhatsApp (Direct)"] || 0) + 1;
+            let dateStr = normalizeDateString(row["Tanggal"]);
+            if(dateStr.length >= 7) { let key = (document.getElementById('monthFilter').value === "ALL") ? dateStr.substring(0, 7) : dateStr; datesCountGlobal[key] = (datesCountGlobal[key] || 0) + 1; datesRevenueGlobal[key] = (datesRevenueGlobal[key] || 0) + gross; }
+            let sku = String(row["SKU Induk"] || "Tanpa SKU").trim(); skuCount[sku] = (skuCount[sku] || 0) + qty;
+         }
+      });
+
+      dataTT.forEach(row => {
+          let gross = parseInt(row["GMV (Omset)"]) || 0; let net = parseInt(row["Pendapatan Bruto"]) || 0; let pesanan = parseInt(row["Pesanan"]) || 0; let terjual = parseInt(row["Produk Terjual"]) || 0; let returNominal = parseInt(row["Pengembalian Dana"]) || 0; let plat = row["Platform"];
+          totalGross += gross; totalNet += net; validInv += pesanan; totalItems += terjual;
+          if(returNominal > 0) { totalReturNominal += returNominal; cancelReasons[`Pengembalian Dana ${plat}`] = (cancelReasons[`Pengembalian Dana ${plat}`] || 0) + 1; }
+          paymentCount[`Platform: ${plat}`] = (paymentCount[`Platform: ${plat}`] || 0) + pesanan;
+          provinceCount[`${plat} (Gabungan)`] = (provinceCount[`${plat} (Gabungan)`] || 0) + pesanan;
+          let dateStr = normalizeDateString(row["Tanggal"]);
+          if(dateStr.length >= 7) { let key = (document.getElementById('monthFilter').value === "ALL") ? dateStr.substring(0, 7) : dateStr; datesCountGlobal[key] = (datesCountGlobal[key] || 0) + pesanan; datesRevenueGlobal[key] = (datesRevenueGlobal[key] || 0) + gross; }
+      });
+
+      totalGrossAktualForAds = totalGross; totalTerjualAktualForAds = totalItems;
+
+      let settledGross = 0; let settledNet = 0; let settledHpp = 0; let shopeeSettledCount = 0;
+      tableDataState.forEach(item => { if (item.net > 0) { settledGross += item.gross; settledNet += item.net; settledHpp += item.totalHpp; if(item.sumber === 'Shopee') shopeeSettledCount++; } });
+      let settledProfit = settledNet - settledHpp; let profitMargin = (settledNet > 0) ? (settledProfit / settledNet * 100) : 0;
+      let avgPercentage = 0;
+      if (settledGross > 0) { let varPotongan = (settledGross - settledNet) - (shopeeSettledCount * 1250); if(varPotongan < 0) varPotongan = 0; avgPercentage = (varPotongan / settledGross) * 100; }
+
+      document.getElementById('kpi-orders').innerText = validInv.toLocaleString('id-ID') + ' Inv'; document.getElementById('kpi-sold').innerText = totalItems.toLocaleString('id-ID') + ' Item Terjual';
+      document.getElementById('kpi-gross-revenue').innerText = 'Rp ' + totalGross.toLocaleString('id-ID'); document.getElementById('kpi-net-revenue').innerText = 'Rp ' + totalNet.toLocaleString('id-ID');
+      document.getElementById('kpi-potongan').innerText = avgPercentage > 0 ? `${avgPercentage.toFixed(1)}%` : '0%'; 
+      document.getElementById('kpi-profit').innerText = 'Rp ' + settledProfit.toLocaleString('id-ID'); document.getElementById('kpi-hpp').innerText = 'Rp ' + settledHpp.toLocaleString('id-ID'); document.getElementById('kpi-margin').innerText = `${profitMargin.toFixed(1)}%`;
+      
+      document.getElementById('kpi-batal').innerText = batalInv.toLocaleString('id-ID') + ' Inv'; document.getElementById('kpi-batal-nom').innerText = 'Rp ' + totalBatalNominal.toLocaleString('id-ID'); 
+      document.getElementById('kpi-retur').innerText = returInv > 0 ? (returInv.toLocaleString('id-ID') + ' Inv') : 'Gabungan'; document.getElementById('kpi-retur-nom').innerText = 'Rp ' + totalReturNominal.toLocaleString('id-ID'); 
+      
+      let sortedDates = Object.keys(datesRevenueGlobal).sort(); let trendData = sortedDates.map(date => datesRevenueGlobal[date]); 
+      let sortedSku = Object.entries(skuCount).sort((a,b) => b[1] - a[1]).slice(0, 5); let sortedProv = Object.entries(provinceCount).sort((a,b) => b[1] - a[1]).slice(0, 5);
+      let sortedPay = Object.entries(paymentCount).sort((a,b) => b[1] - a[1]); let sortedCancel = Object.entries(cancelReasons).sort((a,b) => b[1] - a[1]).slice(0, 7);
+      const palette = ['#f97316', '#10b981', '#1f2937', '#3b82f6', '#8b5cf6', '#f43f5e', '#0ea5e9', '#f59e0b', '#14b8a6', '#ec4899'];
+
+      ['trendChart', 'skuChart', 'paymentChart', 'provinceChart', 'cancelChart'].forEach(id => { if (charts[id]) charts[id].destroy(); });
+      
+      charts['trendChart'] = new Chart(document.getElementById('trendChart'), { type: 'line', data: { labels: sortedDates, datasets: [{ label: 'Gross Revenue (Rp)', data: trendData, backgroundColor: 'rgba(249, 115, 22, 0.1)', borderColor: '#f97316', borderWidth: 2, tension: 0.3, fill: true }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: function(ctx) { return `Rp ${ctx.raw.toLocaleString('id-ID')} (${datesCountGlobal[ctx.label]} Inv/Pesanan)`; } } } }, scales: { y: { ticks: { callback: function(value) { return 'Rp ' + value.toLocaleString('id-ID'); } } } } } });
+      renderChart('skuChart', 'bar', sortedSku.map(i=>i[0]), sortedSku.map(i=>i[1]), 'Terjual (pcs)', '#3b82f6', true);
+      renderChart('paymentChart', 'doughnut', sortedPay.map(i=>i[0]), sortedPay.map(i=>i[1]), 'Transaksi/Pesanan', palette);
+      renderChart('provinceChart', 'bar', sortedProv.map(i=>i[0]), sortedProv.map(i=>i[1]), 'Transaksi/Pesanan', '#10b981', true);
+      renderChart('cancelChart', 'bar', sortedCancel.map(i=>i[0]), sortedCancel.map(i=>i[1]), 'Insiden', '#ef4444', true);
+    }
+
+    function prepareProductData(dataPesanan, dataWa) {
+       let orderDict = {}; tableDataState.forEach(o => { orderDict[o.orderId] = o; }); let prodMap = {};
+
+       dataPesanan.forEach(row => {
+          let orderId = String(row["No. Pesanan"] || "").trim(); if(!orderId) return;
+          let isBatal = String(row["Status Pesanan"]).toLowerCase().includes("batal") || String(row["Alasan Pembatalan"]).trim() !== "";
+          let isRetur = String(row["Status Pembatalan/Pengembalian"]).toLowerCase().includes("disetujui");
+          if(!isBatal && !isRetur) {
+             let qty = parseInt(row["Jumlah"]) || 1; let harga = parseInt(row["Harga Setelah Diskon"]) || 0; let gross = harga * qty;
+             let sku = String(row["SKU Induk"] || "Tanpa SKU Induk").trim(); let variasi = String(row["Nama Variasi"] || "Tanpa Variasi").trim();
+             let hpp_item = hppDictCache[`${sku}_${variasi}`] || 0; let totalHpp = hpp_item * qty;
+             let orderData = orderDict[orderId]; let ratio = (orderData && orderData.gross > 0) ? (orderData.net / orderData.gross) : 0; let netEst = gross * ratio;
+
+             if(!prodMap[sku]) { prodMap[sku] = { sku: sku, totalQty: 0, totalGross: 0, totalNet: 0, totalHpp: 0, varians: {} }; }
+             prodMap[sku].totalQty += qty; prodMap[sku].totalGross += gross; prodMap[sku].totalNet += netEst; prodMap[sku].totalHpp += totalHpp;
+             if(!prodMap[sku].varians[variasi]) { prodMap[sku].varians[variasi] = { variasi: variasi, qty: 0, gross: 0, net: 0, totalHpp: 0 }; }
+             prodMap[sku].varians[variasi].qty += qty; prodMap[sku].varians[variasi].gross += gross; prodMap[sku].varians[variasi].net += netEst; prodMap[sku].varians[variasi].totalHpp += totalHpp;
+          }
+       });
+
+       dataWa.forEach(row => {
+         let st = String(row["Status"]||"").toLowerCase();
+         if(st === 'sukses') {
+             let qty = parseInt(row["Qty"])||0; let harga = parseFloat(row["Harga Jual (Gross)"])||0; let gross = qty * harga; let netEst = gross; 
+             let sku = String(row["SKU Induk"] || "Tanpa SKU Induk").trim(); let variasi = String(row["Varian"] || "Tanpa Variasi").trim();
+             let hpp_item = parseFloat(row["HPP (Modal)"])||0; let totalHpp = hpp_item * qty;
+
+             if(!prodMap[sku]) { prodMap[sku] = { sku: sku, totalQty: 0, totalGross: 0, totalNet: 0, totalHpp: 0, varians: {} }; }
+             prodMap[sku].totalQty += qty; prodMap[sku].totalGross += gross; prodMap[sku].totalNet += netEst; prodMap[sku].totalHpp += totalHpp;
+             if(!prodMap[sku].varians[variasi]) { prodMap[sku].varians[variasi] = { variasi: variasi, qty: 0, gross: 0, net: 0, totalHpp: 0 }; }
+             prodMap[sku].varians[variasi].qty += qty; prodMap[sku].varians[variasi].gross += gross; prodMap[sku].varians[variasi].net += netEst; prodMap[sku].varians[variasi].totalHpp += totalHpp;
+         }
+       });
+
+       productDataState = Object.values(prodMap).map(p => { 
+           p.laba = p.totalNet - p.totalHpp; p.margin = p.totalGross > 0 ? (p.laba / p.totalGross * 100) : 0;
+           p.varians = Object.values(p.varians).map(v => { v.laba = v.net - v.totalHpp; v.margin = v.gross > 0 ? (v.laba / v.gross * 100) : 0; return v; }).sort((a, b) => b.qty - a.qty); 
+           return p; 
+       });
+
+       currentProdSortCol = 'qty'; currentProdSortDesc = true; executeProdSortAndRender();
+    }
+
+    function handleProdSort(col) { if (currentProdSortCol === col) currentProdSortDesc = !currentProdSortDesc; else { currentProdSortCol = col; currentProdSortDesc = true; } executeProdSortAndRender(); }
+    function executeProdSortAndRender() {
+      let keyMap = { 'sku': 'sku', 'qty': 'totalQty', 'gross': 'totalGross', 'hpp': 'totalHpp', 'laba': 'laba', 'margin': 'margin' };
+      ['sku', 'qty', 'gross', 'hpp', 'laba', 'margin'].forEach(c => { let el = document.getElementById(`sort-prod-${c}`); if (el) el.innerText = ''; });
+      let activeEl = document.getElementById(`sort-prod-${currentProdSortCol}`); if(activeEl) activeEl.innerText = currentProdSortDesc ? '↓' : '↑';
+
+      productDataState.sort((a, b) => { let k = keyMap[currentProdSortCol]; let valA = a[k]; let valB = b[k]; if (currentProdSortCol === 'sku') { if(valA < valB) return currentProdSortDesc ? 1 : -1; if(valA > valB) return currentProdSortDesc ? -1 : 1; return 0; } else return currentProdSortDesc ? valB - valA : valA - valB; });
+      let tbody = document.getElementById('tableProdBody'); tbody.innerHTML = ''; if (productDataState.length === 0) return;
+
+      productDataState.forEach((data, index) => {
+        let childClass = `child-of-sku-${index}`; let iconId = `icon-sku-${index}`;
+        let trParent = document.createElement('tr'); trParent.className = `border-b border-gray-200 bg-white hover:bg-teal-50 transition cursor-pointer`; trParent.onclick = () => toggleVarian(childClass, iconId);
+        let labaHtml = `<span class="${data.laba > 0 ? 'text-indigo-600' : 'text-red-500'} font-black">Rp ${Math.round(data.laba).toLocaleString('id-ID')}</span>`;
+        let marginClass = data.margin >= 20 ? 'text-green-600' : (data.margin > 0 ? 'text-orange-500' : 'text-red-500');
+
+        trParent.innerHTML = `
+            <td class="p-3 font-bold text-gray-800 flex items-center gap-2 select-none"><svg id="${iconId}" class="w-4 h-4 text-gray-400 transition-transform duration-200 transform -rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>${data.sku} <span class="text-[9px] font-normal text-gray-400">(${data.varians.length} var)</span></td>
+            <td class="p-3 text-center font-bold text-blue-600 select-none">${data.totalQty.toLocaleString('id-ID')}</td>
+            <td class="p-3 text-right font-bold text-gray-700 select-none">Rp ${Math.round(data.totalGross).toLocaleString('id-ID')}</td>
+            <td class="p-3 text-right font-semibold text-orange-700 bg-orange-50 bg-opacity-30 select-none">Rp ${Math.round(data.totalHpp).toLocaleString('id-ID')}</td>
+            <td class="p-3 text-right bg-indigo-50 bg-opacity-30 select-none">${labaHtml}</td>
+            <td class="p-3 text-center font-black ${marginClass} bg-green-50 bg-opacity-30 select-none">${data.margin.toFixed(1)}%</td>`;
+        tbody.appendChild(trParent);
+
+        data.varians.forEach(vr => {
+            let trChild = document.createElement('tr'); trChild.className = `${childClass} hidden border-b border-gray-100 bg-gray-50 text-[12px]`;
+            let vLabaHtml = `<span class="${vr.laba > 0 ? 'text-indigo-600' : 'text-red-500'} font-bold">Rp ${Math.round(vr.laba).toLocaleString('id-ID')}</span>`;
+            let vMarginClass = vr.margin >= 20 ? 'text-green-600' : (vr.margin > 0 ? 'text-orange-500' : 'text-red-500');
+            trChild.innerHTML = `<td class="p-3 pl-8 text-gray-400 flex items-center gap-2"><svg class="w-3 h-3 border-l-2 border-b-2 border-gray-300 ml-2" viewBox="0 0 24 24"></svg> <span class="font-medium text-gray-700">${vr.variasi}</span></td><td class="p-3 text-center font-semibold text-blue-500">${vr.qty.toLocaleString('id-ID')}</td><td class="p-3 text-right text-gray-600">Rp ${Math.round(vr.gross).toLocaleString('id-ID')}</td><td class="p-3 text-right text-orange-600">Rp ${Math.round(vr.totalHpp).toLocaleString('id-ID')}</td><td class="p-3 text-right">${vLabaHtml}</td><td class="p-3 text-center font-bold ${vMarginClass}">${vr.margin.toFixed(1)}%</td>`;
+            tbody.appendChild(trChild);
+        });
+      });
+    }
+
+    window.toggleVarian = function(c, id) { document.querySelectorAll('.' + c).forEach(el => el.classList.toggle('hidden')); let ic = document.getElementById(id); if(ic) ic.style.transform = ic.style.transform === 'rotate(0deg)' ? 'rotate(-90deg)' : 'rotate(0deg)'; }
+
+    function renderIklanDashboard(dataIklan) {
+        let selectedMonth = document.getElementById('monthFilter').value;
+        let monthText = selectedMonth === "ALL" ? "Semua Bulan" : document.getElementById('monthFilter').options[document.getElementById('monthFilter').selectedIndex].text;
+        document.getElementById('iklan-status-bulan').innerText = "Periode: " + monthText;
+        let totalBiaya = 0; let totalOmzetKlaim = 0; let totalQtyKlaim = 0;
+        dataIklan.forEach(row => { totalBiaya += parseInt(row["Biaya"]) || 0; totalOmzetKlaim += parseInt(row["Omzet Penjualan"]) || 0; totalQtyKlaim += parseInt(row["Produk Terjual"]) || 0; });
+
+        document.getElementById('iklan-biaya').innerText = 'Rp ' + totalBiaya.toLocaleString('id-ID'); document.getElementById('iklan-omzet-klaim').innerText = 'Rp ' + totalOmzetKlaim.toLocaleString('id-ID'); document.getElementById('iklan-omzet-aktual').innerText = 'Rp ' + totalGrossAktualForAds.toLocaleString('id-ID');
+        document.getElementById('iklan-qty-klaim').innerText = totalQtyKlaim.toLocaleString('id-ID'); document.getElementById('iklan-qty-aktual').innerText = totalTerjualAktualForAds.toLocaleString('id-ID');
+
+        let acosKlaim = totalOmzetKlaim > 0 ? (totalBiaya / totalOmzetKlaim * 100) : 0; let acosAktual = totalGrossAktualForAds > 0 ? (totalBiaya / totalGrossAktualForAds * 100) : 0;
+        let roasKlaim = totalBiaya > 0 ? (totalOmzetKlaim / totalBiaya) : 0; let roasAktual = totalBiaya > 0 ? (totalGrossAktualForAds / totalBiaya) : 0;
+
+        document.getElementById('iklan-acos-klaim').innerText = acosKlaim.toFixed(1) + '%'; document.getElementById('iklan-acos-aktual').innerText = acosAktual.toFixed(1) + '%';
+        document.getElementById('iklan-roas-klaim').innerText = roasKlaim.toFixed(2) + 'x'; document.getElementById('iklan-roas-aktual').innerText = roasAktual.toFixed(2) + 'x';
+    }
+
+    // --- STATUS KONEKSI SPREADSHEET ADMIN (banner di tab Rekon) ---
+    function escHtml(t) { return String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+    function renderRekonAdminInfo(totalShopee, matched, sampleShopeeId) {
+      const el = document.getElementById('rekonAdminInfo'); if (!el) return;
+      const info = globalAdminInfo;
+      if (!info) { el.className = 'hidden'; el.innerHTML = ''; return; }
+      const sheets = info.sheets || [];
+      const okSheets = sheets.filter(x => x.status === 'ok');
+      const skipped = sheets.filter(x => x.status !== 'ok' && x.status !== 'disembunyikan');
+      const sheetList = (arr) => arr.map(x => x.status === 'ok' ? `${escHtml(x.name)} (${x.ids.toLocaleString('id-ID')})` : `${escHtml(x.name)} <span class="italic">- ${escHtml(x.status)}${x.headers ? ': ' + escHtml(x.headers.join(' | ')) : ''}</span>`).join(', ');
+      let tone = 'green', title = '', detail = '';
+
+      if (!info.configured) {
+        tone = 'red'; title = 'Spreadsheet admin belum disambungkan';
+        detail = 'Isi <b>SPREADSHEET_ADMIN_ID</b> di Apps Script (Project Settings &rarr; Script Properties), lalu muat ulang halaman ini.';
+      } else if (info.error) {
+        tone = 'red'; title = 'Spreadsheet admin tidak bisa dibuka';
+        detail = `Pesan Google: <span class="font-mono">${escHtml(info.error)}</span><br>Periksa ID-nya, pastikan akun yang men-deploy Web App punya akses ke spreadsheet itu, lalu jalankan fungsi <b>cekSpreadsheetAdmin</b> sekali dari editor Apps Script untuk memberi izin.`;
+      } else if (info.totalIds === 0) {
+        tone = 'amber'; title = 'Spreadsheet admin terbuka, tetapi tidak ada No. Pesanan yang terbaca';
+        detail = 'Tiap tab harus punya kolom <b>NO PESANAN</b> (maksimal di 10 baris pertama). Status per tab: ' + (sheets.length ? sheetList(sheets) : 'tidak ada tab');
+      } else if (totalShopee > 0 && matched === 0) {
+        tone = 'amber'; title = `${info.totalIds.toLocaleString('id-ID')} No. Pesanan terbaca dari ${okSheets.length} tab, tetapi tidak ada yang cocok dengan data Shopee`;
+        const s0 = (okSheets[0] && okSheets[0].sample && okSheets[0].sample[0]) || '-';
+        detail = `Bandingkan format: contoh ID admin <span class="font-mono">${escHtml(s0)}</span> &nbsp;|&nbsp; contoh ID Shopee <span class="font-mono">${escHtml(sampleShopeeId || '-')}</span>. Jika ada tambahan karakter, tampil sebagai angka ilmiah (2.5E+11), atau berbeda spasi/awalan, perbaiki kolom di spreadsheet admin.`;
+      } else {
+        tone = 'green'; title = `Terhubung: ${okSheets.length} tab, ${info.totalIds.toLocaleString('id-ID')} No. Pesanan terbaca` + (totalShopee > 0 ? ` &middot; ${matched.toLocaleString('id-ID')} dari ${totalShopee.toLocaleString('id-ID')} pesanan Shopee ditemukan di admin` : '');
+        detail = 'Tab: ' + sheetList(okSheets) + (skipped.length ? '<br><span class="text-amber-700">Dilewati: ' + sheetList(skipped) + '</span>' : '');
+      }
+      const cls = { red: 'bg-red-50 border-red-200 text-red-800', amber: 'bg-amber-50 border-amber-200 text-amber-800', green: 'bg-green-50 border-green-200 text-green-800' }[tone];
+      el.className = `px-5 py-3 border-b text-xs ${cls}`;
+      el.innerHTML = `<p class="font-bold">${title}</p><p class="mt-1 opacity-90 break-words">${detail}</p>`;
+    }
+
+    function prepareRekonData(dataPesanan) {
+      rekonDataState = []; let blmRekap = 0, sesuaiCount = 0, insidenCount = 0; let processedOrders = new Set(); let matchedCount = 0, sampleShopeeId = '';
+      dataPesanan.forEach(row => {
+        let orderId = String(row["No. Pesanan"] || "").trim(); if(!orderId || processedOrders.has(orderId)) return;
+        processedOrders.add(orderId);
+        let stPengembalian = String(row["Status Pembatalan/Pengembalian"]||"").toLowerCase(); let stPesanan = String(row["Status Pesanan"]||"").toLowerCase(); let alasan = String(row["Alasan Pembatalan"]||"").trim();
+        let isBatal = stPesanan.includes("batal") || stPesanan.includes("dibatalkan") || alasan !== ""; let isRetur = stPengembalian.includes("disetujui") || stPengembalian.includes("retur");
+        let tglShopeeStr = normalizeDateString(row["Waktu Pesanan Dibuat"]); let status = "Sukses"; let isInsiden = isBatal || isRetur;
+        if(isBatal) status = "Dibatalkan"; if(isRetur) status = "Diretur";
+
+        let stRekon = "Sesuai"; let badgeClass = "bg-green-100 text-green-700";
+        let isTercatat = (globalAdminOrders[orderId] !== undefined); if (isTercatat) matchedCount++; if (!sampleShopeeId) sampleShopeeId = orderId;
+        let tglPencatatan = isTercatat ? (globalAdminOrders[orderId].tglPencatatan || "-") : "-";
+        
+        let sheetAdmin = isTercatat ? (globalAdminOrders[orderId].sheetName || "-") : "-";
+
+        if (isInsiden) { insidenCount++; if (isTercatat) { stRekon = "Insiden (Tercatat)"; badgeClass = "bg-orange-100 text-orange-800 border border-orange-300 font-bold"; } else { stRekon = "Insiden (Tdk Tercatat)"; badgeClass = "bg-gray-100 text-gray-500 border border-gray-300 border-dashed"; } } 
+        else if (!isTercatat) { blmRekap++; stRekon = "Belum Direkap"; badgeClass = "bg-red-100 text-red-700"; } 
+        else { sesuaiCount++; stRekon = "Sesuai"; badgeClass = "bg-green-100 text-green-700"; }
+        
+        rekonDataState.push({ orderId, tglShopee: tglShopeeStr, tglPencatatan, sheetAdmin, status, stRekon, badgeClass });
+      });
+
+      document.getElementById('rekon-belum').innerText = blmRekap.toLocaleString('id-ID'); document.getElementById('rekon-sesuai').innerText = sesuaiCount.toLocaleString('id-ID'); document.getElementById('rekon-insiden').innerText = insidenCount.toLocaleString('id-ID');
+      let badgeAlert = document.getElementById('badge-rekon-alert');
+      if(blmRekap > 0) { badgeAlert.style.display = 'inline-block'; badgeAlert.innerText = blmRekap > 99 ? '99+' : blmRekap; } else badgeAlert.style.display = 'none';
+      renderRekonAdminInfo(rekonDataState.length, matchedCount, sampleShopeeId);
+      currentRekonSortCol = 'stRekon'; currentRekonSortDesc = false; rekonLimit = ROW_PAGE; executeRekonSortAndRender();
+    }
+    function handleRekonSort(col) { if (currentRekonSortCol === col) currentRekonSortDesc = !currentRekonSortDesc; else { currentRekonSortCol = col; currentRekonSortDesc = true; } rekonLimit = ROW_PAGE; executeRekonSortAndRender(); }
+    function executeRekonSortAndRender() {
+        ['orderId', 'tglShopee', 'tglPencatatan', 'sheetAdmin', 'status', 'stRekon'].forEach(c => { let el = document.getElementById(`sort-rekon-${c}`); if (el) el.innerText = ''; });
+        let activeEl = document.getElementById(`sort-rekon-${currentRekonSortCol}`); if(activeEl) activeEl.innerText = currentRekonSortDesc ? '↓' : '↑';
+        rekonDataState.sort((a, b) => { let valA = a[currentRekonSortCol]; let valB = b[currentRekonSortCol]; if(valA < valB) return currentRekonSortDesc ? 1 : -1; if(valA > valB) return currentRekonSortDesc ? -1 : 1; return 0; });
+        let tbody = document.getElementById('tableRekonBody'); tbody.innerHTML = '';
+        if (rekonDataState.length === 0) { tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">Tidak ada data.</td></tr>`; return; }
+        
+        rekonDataState.slice(0, rekonLimit).forEach(r => { 
+            let tr = document.createElement('tr'); tr.className = "border-b border-gray-100 hover:bg-gray-50 transition"; 
+            tr.innerHTML = `
+                <td class="p-3 font-mono text-xs text-blue-600 font-bold">${r.orderId}</td>
+                <td class="p-3 text-xs">${r.tglShopee}</td>
+                <td class="p-3 text-xs font-semibold bg-purple-50 bg-opacity-30">${r.tglPencatatan}</td>
+                <td class="p-3 text-[10px] font-bold text-purple-700 bg-purple-50 bg-opacity-30">${r.sheetAdmin}</td>
+                <td class="p-3 text-xs">${r.status}</td>
+                <td class="p-3 bg-blue-50 bg-opacity-30"><span class="${r.badgeClass} px-2 py-1 rounded text-[10px]">${r.stRekon}</span></td>
+            `; 
+            tbody.appendChild(tr); 
+        });
+        appendMoreRow(tbody, 6, Math.min(rekonLimit, rekonDataState.length), rekonDataState.length, 'showMoreRekon');
+    }
+
+    // Export ke Excel
+    function exportTableToExcel() {
+      if (!tableDataState || tableDataState.length === 0) { showToast("Tidak ada data untuk di-export!", true); return; }
+      showLoading(true, 'Menyiapkan file Excel', 'Mengekspor data Laba Rugi...');
+      setTimeout(() => {
+        try {
+          const exportData = tableDataState.map(item => ({ "Sumber": item.sumber, "No. Pesanan": item.orderId, "Tanggal": item.tanggal, "Omset (Gross)": item.gross, "Total HPP (Modal)": item.totalHpp, "Pencairan (Net)": item.net, "Potongan (%)": parseFloat(item.potongan.toFixed(2)), "Potongan (Rp)": item.totalPotonganRp, "Laba Bersih": item.laba, "Keterangan": item.missingHpp ? "⚠️ Set HPP" : (item.net === 0 ? "BELUM CAIR" : "Sukses") }));
+          const ws = XLSX.utils.json_to_sheet(exportData); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Laba Rugi Gabungan");
+          let fMonth = document.getElementById('monthFilter').value === "ALL" ? "Semua_Bulan" : document.getElementById('monthFilter').value;
+          
+          XLSX.writeFile(wb, `Laba_Rugi_Omni_${fMonth}.xlsx`);
+
+          showLoading(false); showToast("Data berhasil di-export!");
+        } catch (error) { showLoading(false); showToast("Gagal export: " + error.message, true); }
+      }, 500);
+    }
+    
+    // Export ke Excel
+    function exportRekonToExcel() {
+      if (!rekonDataState || rekonDataState.length === 0) { showToast("Tidak ada data rekon untuk di-export!", true); return; }
+      showLoading(true, 'Menyiapkan file Excel', 'Mengekspor data Rekonsiliasi...');
+      setTimeout(() => {
+        try {
+          const exportData = rekonDataState.map(item => ({ 
+              "No. Pesanan": item.orderId, 
+              "Tanggal Shopee": item.tglShopee, 
+              "Tanggal Pencatatan (Admin)": item.tglPencatatan, 
+              "Lokasi Sheet Admin": item.sheetAdmin,
+              "Status Shopee": item.status, 
+              "Status Rekon": item.stRekon 
+          }));
+          const ws = XLSX.utils.json_to_sheet(exportData); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Rekap Rekonsiliasi");
+          let fMonth = document.getElementById('monthFilter').value === "ALL" ? "Semua_Bulan" : document.getElementById('monthFilter').value;
+          
+          XLSX.writeFile(wb, `Rekonsiliasi_Crosscheck_${fMonth}.xlsx`);
+
+          showLoading(false); showToast("Data Rekonsiliasi berhasil di-export!");
+        } catch (error) { showLoading(false); showToast("Gagal export Rekon: " + error.message, true); }
+      }, 500);
+    }
+  </script>
+</body>
+</html>
